@@ -1,0 +1,20 @@
+# Flutter/Dart
+.dart_tool/
+.buildlog/
+.packages
+.pub/
+pubspec.lock
+
+# Builds
+build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+
+# Backups / zips
+*.zip
