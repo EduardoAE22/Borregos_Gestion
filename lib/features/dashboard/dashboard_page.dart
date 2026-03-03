@@ -105,6 +105,17 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               payments: payments,
               now: now,
             );
+            final width = MediaQuery.of(context).size.width;
+            final crossAxisCount = width < 600
+                ? 1
+                : width < 980
+                    ? 2
+                    : 4;
+            final childAspectRatio = width < 600
+                ? 1.65
+                : width < 980
+                    ? 1.18
+                    : 1.15;
 
             final today = DateTime(now.year, now.month, now.day);
             final upcomingGames = games.where((g) {
@@ -123,7 +134,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               children: [
                 const _DashboardBackdrop(),
                 ListView(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    16,
+                    16,
+                    MediaQuery.of(context).padding.bottom + 12,
+                  ),
                   children: [
                     _StaggerReveal(
                       delayMs: 30,
@@ -134,11 +150,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     ),
                     const SizedBox(height: 14),
                     GridView.count(
-                      crossAxisCount:
-                          MediaQuery.of(context).size.width > 980 ? 4 : 2,
+                      crossAxisCount: crossAxisCount,
                       mainAxisSpacing: 12,
                       crossAxisSpacing: 12,
-                      childAspectRatio: 1.15,
+                      childAspectRatio: childAspectRatio,
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       children: [
@@ -227,6 +242,7 @@ class _HeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.of(context).size.width < 600;
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
@@ -239,10 +255,8 @@ class _HeaderCard extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
+        child: compact
+            ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Sede Progreso',
@@ -265,22 +279,63 @@ class _HeaderCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text('Bienvenido, $profileName',
                       style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: SizedBox(
+                      width: 88,
+                      height: 88,
+                      child: Image.asset(
+                        'assets/branding/borregos_logo.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.emoji_events_outlined, size: 64),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Sede Progreso',
+                            style: Theme.of(context).textTheme.headlineSmall),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 110,
+                          height: 2,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                                colors: [BrandColors.gold, Colors.transparent]),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Temporada activa: $seasonName',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 4),
+                        Text('Bienvenido, $profileName',
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 104,
+                    height: 104,
+                    child: Image.asset(
+                      'assets/branding/borregos_logo.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.emoji_events_outlined, size: 64),
+                    ),
+                  ),
                 ],
               ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 104,
-              height: 104,
-              child: Image.asset(
-                'assets/branding/borregos_logo.png',
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) =>
-                    const Icon(Icons.emoji_events_outlined, size: 64),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/config/router.dart';
 import 'core/theme/theme.dart';
+import 'core/ui/app_scroll_behavior.dart';
 
 class BorregosApp extends ConsumerWidget {
   const BorregosApp({super.key});
@@ -16,6 +17,7 @@ class BorregosApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
       darkTheme: AppTheme.dark,
+      scrollBehavior: const AppScrollBehavior(),
       routerConfig: router,
     );
   }

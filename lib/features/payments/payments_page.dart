@@ -337,6 +337,9 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
 
             return seasonAsync.when(
               data: (season) {
+                final media = MediaQuery.of(context);
+                final viewPadding = media.padding;
+                final isCompact = media.size.width < 600;
                 if (season == null) {
                   return const EmptyState(
                     title: 'Sin temporada activa',
@@ -419,9 +422,13 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              Expanded(
+                              SizedBox(
+                                width: isCompact ? media.size.width - 32 : null,
                                 child: Text(
                                   'Temporada activa: ${season.name}',
                                   style:
@@ -445,21 +452,24 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                             ],
                           ),
                           const SizedBox(height: 10),
-                          SegmentedButton<_PaymentsBoardMode>(
-                            segments: const [
-                              ButtonSegment(
-                                value: _PaymentsBoardMode.training,
-                                label: Text('Entrenamiento'),
-                              ),
-                              ButtonSegment(
-                                value: _PaymentsBoardMode.uniform,
-                                label: Text('Uniforme'),
-                              ),
-                            ],
-                            selected: {_mode},
-                            onSelectionChanged: (selection) {
-                              setState(() => _mode = selection.first);
-                            },
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SegmentedButton<_PaymentsBoardMode>(
+                              segments: const [
+                                ButtonSegment(
+                                  value: _PaymentsBoardMode.training,
+                                  label: Text('Entrenamiento'),
+                                ),
+                                ButtonSegment(
+                                  value: _PaymentsBoardMode.uniform,
+                                  label: Text('Uniforme'),
+                                ),
+                              ],
+                              selected: {_mode},
+                              onSelectionChanged: (selection) {
+                                setState(() => _mode = selection.first);
+                              },
+                            ),
                           ),
                           const SizedBox(height: 10),
                           if (_mode == _PaymentsBoardMode.training) ...[
@@ -473,9 +483,14 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                             ),
                             const SizedBox(height: 10),
                           ] else ...[
-                            Row(
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                Expanded(
+                                SizedBox(
+                                  width:
+                                      isCompact ? media.size.width - 32 : 320,
                                   child: DropdownButtonFormField<String>(
                                     key: ValueKey(selectedUniformCampaign?.id),
                                     initialValue: selectedUniformCampaign?.id,
@@ -498,7 +513,6 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                                             ),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
                                 OutlinedButton.icon(
                                   onPressed: canWritePayments
                                       ? () => _openUniformCampaignSheet(
@@ -514,7 +528,6 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                                   ),
                                 ),
                                 if (selectedUniformCampaign != null) ...[
-                                  const SizedBox(width: 8),
                                   OutlinedButton.icon(
                                     onPressed: canWritePayments
                                         ? () => _openUniformCampaignSheet(
@@ -588,25 +601,28 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                                   ],
                           ),
                           const SizedBox(height: 10),
-                          SegmentedButton<_PaymentsBoardFilter>(
-                            segments: const [
-                              ButtonSegment(
-                                value: _PaymentsBoardFilter.all,
-                                label: Text('Todos'),
-                              ),
-                              ButtonSegment(
-                                value: _PaymentsBoardFilter.pending,
-                                label: Text('Pendientes'),
-                              ),
-                              ButtonSegment(
-                                value: _PaymentsBoardFilter.paid,
-                                label: Text('Pagados'),
-                              ),
-                            ],
-                            selected: {_filter},
-                            onSelectionChanged: (selection) {
-                              setState(() => _filter = selection.first);
-                            },
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SegmentedButton<_PaymentsBoardFilter>(
+                              segments: const [
+                                ButtonSegment(
+                                  value: _PaymentsBoardFilter.all,
+                                  label: Text('Todos'),
+                                ),
+                                ButtonSegment(
+                                  value: _PaymentsBoardFilter.pending,
+                                  label: Text('Pendientes'),
+                                ),
+                                ButtonSegment(
+                                  value: _PaymentsBoardFilter.paid,
+                                  label: Text('Pagados'),
+                                ),
+                              ],
+                              selected: {_filter},
+                              onSelectionChanged: (selection) {
+                                setState(() => _filter = selection.first);
+                              },
+                            ),
                           ),
                         ],
                       ),
@@ -621,8 +637,12 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                                   icon: Icons.payments_outlined,
                                 )
                               : ListView.separated(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                                  padding: EdgeInsets.fromLTRB(
+                                    12,
+                                    0,
+                                    12,
+                                    viewPadding.bottom + 12,
+                                  ),
                                   itemCount: trainingCards.length,
                                   separatorBuilder: (_, __) =>
                                       const SizedBox(height: 6),
@@ -735,8 +755,12 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                                       icon: Icons.payments_outlined,
                                     )
                                   : ListView.separated(
-                                      padding: const EdgeInsets.fromLTRB(
-                                          12, 0, 12, 12),
+                                      padding: EdgeInsets.fromLTRB(
+                                        12,
+                                        0,
+                                        12,
+                                        viewPadding.bottom + 12,
+                                      ),
                                       itemCount: uniformCards.length,
                                       separatorBuilder: (_, __) =>
                                           const SizedBox(height: 6),

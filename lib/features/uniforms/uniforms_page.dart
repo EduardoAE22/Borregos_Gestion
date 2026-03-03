@@ -61,6 +61,9 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
       body: WatermarkedBody(
         child: seasonsAsync.when(
           data: (seasons) {
+            final media = MediaQuery.of(context);
+            final viewPadding = media.padding;
+            final isCompact = media.size.width < 600;
             final activeSeason = activeSeasonAsync.valueOrNull;
             final seasonId = _selectedSeasonId ?? activeSeason?.id;
             final season = _seasonById(seasons, seasonId);
@@ -107,9 +110,14 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                Expanded(
+                                SizedBox(
+                                  width:
+                                      isCompact ? media.size.width - 32 : 320,
                                   child: DropdownButtonFormField<String>(
                                     initialValue: season.id,
                                     decoration: const InputDecoration(
@@ -128,7 +136,6 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
                                     },
                                   ),
                                 ),
-                                const SizedBox(width: 8),
                                 OutlinedButton.icon(
                                   onPressed: () =>
                                       context.push('/uniformes/requisitos'),
@@ -231,6 +238,7 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
                             _OrderTab(
                               rows: orderRows,
                               isWeb: kIsWeb,
+                              bottomInset: viewPadding.bottom + 12,
                               onExport: () => _exportOrder(
                                 context: context,
                                 season: season,
@@ -251,6 +259,7 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
                             _ExtrasTab(
                               extras: extras,
                               canWrite: canWrite,
+                              bottomInset: viewPadding.bottom + 12,
                               onAdd: () => _openExtraDialog(context, seasonId,
                                   canWrite: canWrite),
                               onEdit: (extra) => _openExtraDialog(
@@ -649,6 +658,7 @@ class _OrderTab extends StatelessWidget {
   const _OrderTab({
     required this.rows,
     required this.isWeb,
+    required this.bottomInset,
     required this.onExport,
     required this.onShare,
     required this.onExportSizes,
@@ -656,6 +666,7 @@ class _OrderTab extends StatelessWidget {
 
   final List<UniformOrderRow> rows;
   final bool isWeb;
+  final double bottomInset;
   final VoidCallback onExport;
   final VoidCallback onShare;
   final VoidCallback onExportSizes;
@@ -724,6 +735,7 @@ class _OrderTab extends StatelessWidget {
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: SingleChildScrollView(
+              padding: EdgeInsets.only(bottom: bottomInset),
               child: DataTable(
                 columns: const [
                   DataColumn(label: Text('No.')),
@@ -756,6 +768,7 @@ class _ExtrasTab extends StatelessWidget {
   const _ExtrasTab({
     required this.extras,
     required this.canWrite,
+    required this.bottomInset,
     required this.onAdd,
     required this.onEdit,
     required this.onDelete,
@@ -763,6 +776,7 @@ class _ExtrasTab extends StatelessWidget {
 
   final List<UniformExtra> extras;
   final bool canWrite;
+  final double bottomInset;
   final VoidCallback onAdd;
   final ValueChanged<UniformExtra> onEdit;
   final ValueChanged<UniformExtra> onDelete;
@@ -791,7 +805,7 @@ class _ExtrasTab extends StatelessWidget {
                   icon: Icons.group_add_outlined,
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, bottomInset),
                   itemCount: extras.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {

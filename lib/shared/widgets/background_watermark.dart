@@ -63,9 +63,12 @@ class WatermarkedBody extends StatelessWidget {
     return Stack(
       children: [
         Positioned.fill(
-          child: BackgroundWatermark(
-            logoPathOrUrl: logoPathOrUrl,
-            opacity: opacity,
+          child: IgnorePointer(
+            ignoring: true,
+            child: BackgroundWatermark(
+              logoPathOrUrl: logoPathOrUrl,
+              opacity: opacity,
+            ),
           ),
         ),
         Positioned.fill(child: child),
