@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/player_profile_requirements.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/utils/logger.dart';
 import '../../core/utils/open_external_url.dart';
 import '../../shared/widgets/app_scaffold.dart';
@@ -14,7 +15,9 @@ import '../../shared/widgets/loading.dart';
 import '../auth/providers/auth_providers.dart';
 import '../seasons/providers/seasons_providers.dart';
 import 'domain/player.dart';
+import 'domain/combine.dart';
 import 'domain/player_completeness.dart';
+import 'providers/combine_providers.dart';
 import 'providers/player_profile_providers.dart';
 import 'providers/player_photo_providers.dart';
 import 'providers/players_providers.dart';
@@ -135,65 +138,118 @@ class _PlayerProfilePageState extends ConsumerState<PlayerProfilePage> {
                 return seasonAsync.when(
                   data: (season) {
                     final seasonName = season?.name ?? 'Sin temporada activa';
+                    final seasonId = season?.id;
+                    final bottomPadding =
+                        MediaQuery.of(context).padding.bottom +
+                            kBottomNavigationBarHeight +
+                            16;
                     return DefaultTabController(
-                      length: 5,
-                      child: Column(
-                        children: [
-                          _ProfileHeader(
-                            player: player,
-                            uiPhotoUrl: uiPhotoUrl,
-                            onDiagnosticAction: uiPhotoUrl.isEmpty
-                                ? null
-                                : () => _onDiagnosticAction(uiPhotoUrl),
-                            onRetryPhoto: () =>
-                                _retryPhotoLoad(player.photoPath),
-                            seasonName: seasonName,
-                            canWrite: canWrite,
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                            child: statsAsync.when(
-                              data: (stats) => _KpiGrid(
+                      length: 6,
+                      child: NestedScrollView(
+                        headerSliverBuilder: (context, innerBoxIsScrolled) {
+                          return [
+                            SliverToBoxAdapter(
+                              child: _ProfileHeader(
                                 player: player,
-                                stats: stats,
+                                uiPhotoUrl: uiPhotoUrl,
+                                onDiagnosticAction: uiPhotoUrl.isEmpty
+                                    ? null
+                                    : () => _onDiagnosticAction(uiPhotoUrl),
+                                onRetryPhoto: () =>
+                                    _retryPhotoLoad(player.photoPath),
+                                seasonName: seasonName,
+                                canWrite: canWrite,
                               ),
-                              loading: () => const SizedBox(
-                                height: 80,
-                                child:
-                                    Center(child: CircularProgressIndicator()),
-                              ),
-                              error: (error, _) =>
-                                  Text('Error cargando KPIs: $error'),
                             ),
-                          ),
-                          const TabBar(
-                            isScrollable: true,
-                            tabs: [
-                              Tab(text: 'Perfil'),
-                              Tab(text: 'Estadísticas'),
-                              Tab(text: 'Bio'),
-                              Tab(text: 'Splits'),
-                              Tab(text: 'Resumen de Juegos'),
-                            ],
-                          ),
-                          Expanded(
-                            child: TabBarView(
-                              children: [
-                                _ProfileTab(player: player),
-                                _StatsTab(statsAsync: statsAsync),
-                                _BioTab(
-                                  controller: _bioController,
-                                  canWrite: canWrite,
-                                  saving: _savingBio,
-                                  onSave:
-                                      canWrite ? () => _saveBio(player) : null,
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                                child: statsAsync.when(
+                                  data: (stats) => _KpiGrid(
+                                    player: player,
+                                    stats: stats,
+                                  ),
+                                  loading: () => const SizedBox(
+                                    height: 80,
+                                    child: Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  ),
+                                  error: (error, _) =>
+                                      Text('Error cargando KPIs: $error'),
                                 ),
-                                const _SplitsTab(),
-                                _GameLogTab(gameLogAsync: gameLogAsync),
-                              ],
+                              ),
                             ),
-                          ),
-                        ],
+                            SliverPersistentHeader(
+                              pinned: true,
+                              delegate: _TabBarHeaderDelegate(
+                                child: PreferredSize(
+                                  preferredSize:
+                                      const Size.fromHeight(kTextTabBarHeight),
+                                  child: Container(
+                                    color: Theme.of(context)
+                                        .scaffoldBackgroundColor,
+                                    child: const TabBar(
+                                      isScrollable: true,
+                                      tabs: [
+                                        Tab(text: 'Perfil'),
+                                        Tab(text: 'Estadísticas'),
+                                        Tab(text: 'Bio'),
+                                        Tab(text: 'Splits'),
+                                        Tab(text: 'Resumen de Juegos'),
+                                        Tab(text: 'Combine'),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ];
+                        },
+                        body: TabBarView(
+                          children: [
+                            _ProfileTab(
+                              player: player,
+                              bottomPadding: bottomPadding,
+                            ),
+                            _StatsTab(
+                              statsAsync: statsAsync,
+                              bottomPadding: bottomPadding,
+                            ),
+                            _BioTab(
+                              controller: _bioController,
+                              canWrite: canWrite,
+                              saving: _savingBio,
+                              onSave: canWrite ? () => _saveBio(player) : null,
+                              bottomPadding: bottomPadding,
+                            ),
+                            _SplitsTab(bottomPadding: bottomPadding),
+                            _GameLogTab(
+                              gameLogAsync: gameLogAsync,
+                              bottomPadding: bottomPadding,
+                            ),
+                            _CombineTab(
+                              seasonId: seasonId,
+                              playerId: widget.playerId,
+                              bottomPadding: bottomPadding,
+                              onCreateSession: seasonId == null
+                                  ? null
+                                  : () => _openCreateCombineSessionSheet(
+                                        seasonId,
+                                      ),
+                              onEditResults: seasonId == null
+                                  ? null
+                                  : (session, tests, current) =>
+                                      _openCombineResultsSheet(
+                                        seasonId: seasonId,
+                                        session: session,
+                                        tests: tests,
+                                        currentByTestId: current,
+                                      ),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -231,6 +287,56 @@ class _PlayerProfilePageState extends ConsumerState<PlayerProfilePage> {
     } finally {
       if (mounted) setState(() => _savingBio = false);
     }
+  }
+
+  Future<void> _openCreateCombineSessionSheet(String seasonId) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _CreateCombineSessionSheet(
+        seasonId: seasonId,
+        onSaved: () {
+          ref.invalidate(combineSessionsByActiveSeasonProvider);
+        },
+      ),
+    );
+  }
+
+  Future<void> _openCombineResultsSheet({
+    required String seasonId,
+    required CombineSession session,
+    required List<CombineTest> tests,
+    required Map<String, CombineResult> currentByTestId,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _CombineResultsSheet(
+        seasonId: seasonId,
+        playerId: widget.playerId,
+        session: session,
+        tests: tests,
+        currentByTestId: currentByTestId,
+        onSaved: () {
+          ref.invalidate(
+            combinePlayerResultsProvider(
+              (
+                sessionId: session.id,
+                playerId: widget.playerId,
+              ),
+            ),
+          );
+          ref.invalidate(
+            combineRankingsProvider(
+              (
+                sessionId: session.id,
+                testId: tests.isEmpty ? '' : tests.first.id,
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 
@@ -270,9 +376,10 @@ class _ProfileHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              uiPhotoUrl.trim().isNotEmpty
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isCompact = constraints.maxWidth < 560;
+              final avatar = uiPhotoUrl.trim().isNotEmpty
                   ? RepaintBoundary(
                       child: CircleAvatar(
                         radius: 42,
@@ -324,33 +431,67 @@ class _ProfileHeader extends StatelessWidget {
                         ),
                       ),
                     )
-                  : CircleAvatar(radius: 42, child: Text(player.initials)),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
+                  : CircleAvatar(radius: 42, child: Text(player.initials));
+              final details = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${player.firstName} ${player.lastName}',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Borregos Gestión • $seasonName',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 8, runSpacing: 8, children: chips),
+                ],
+              );
+
+              if (isCompact) {
+                return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '${player.firstName} ${player.lastName}',
-                      style: Theme.of(context).textTheme.headlineSmall,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        avatar,
+                        const SizedBox(width: 14),
+                        Expanded(child: details),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Borregos Gestión • $seasonName',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(spacing: 8, runSpacing: 8, children: chips),
+                    if (canWrite && player.id != null) ...[
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              context.push('/players/${player.id}/edit'),
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('Editar'),
+                        ),
+                      ),
+                    ],
                   ],
-                ),
-              ),
-              if (canWrite && player.id != null)
-                OutlinedButton.icon(
-                  onPressed: () => context.push('/players/${player.id}/edit'),
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Editar'),
-                ),
-            ],
+                );
+              }
+
+              return Row(
+                children: [
+                  avatar,
+                  const SizedBox(width: 14),
+                  Expanded(child: details),
+                  if (canWrite && player.id != null)
+                    OutlinedButton.icon(
+                      onPressed: () =>
+                          context.push('/players/${player.id}/edit'),
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('Editar'),
+                    ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 8),
           Text(
@@ -481,9 +622,13 @@ class _KpiGrid extends StatelessWidget {
 }
 
 class _ProfileTab extends StatelessWidget {
-  const _ProfileTab({required this.player});
+  const _ProfileTab({
+    required this.player,
+    required this.bottomPadding,
+  });
 
   final Player player;
+  final double bottomPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -491,7 +636,7 @@ class _ProfileTab extends StatelessWidget {
         PlayerCompletenessHelper.missingFieldLabelsForPlayer(player);
     final quality = missingLabels.isEmpty ? 'Completo' : 'Incompleto';
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPadding),
       children: [
         Card(
           child: ListTile(
@@ -530,16 +675,20 @@ class _ProfileTab extends StatelessWidget {
 }
 
 class _StatsTab extends StatelessWidget {
-  const _StatsTab({required this.statsAsync});
+  const _StatsTab({
+    required this.statsAsync,
+    required this.bottomPadding,
+  });
 
   final AsyncValue<PlayerSeasonStats> statsAsync;
+  final double bottomPadding;
 
   @override
   Widget build(BuildContext context) {
     return statsAsync.when(
       data: (stats) {
         return ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPadding),
           children: [
             Card(
               child: Padding(
@@ -597,18 +746,20 @@ class _BioTab extends StatelessWidget {
     required this.controller,
     required this.canWrite,
     required this.saving,
+    required this.bottomPadding,
     this.onSave,
   });
 
   final TextEditingController controller;
   final bool canWrite;
   final bool saving;
+  final double bottomPadding;
   final VoidCallback? onSave;
 
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPadding),
       children: [
         TextField(
           controller: controller,
@@ -636,13 +787,15 @@ class _BioTab extends StatelessWidget {
 }
 
 class _SplitsTab extends StatelessWidget {
-  const _SplitsTab();
+  const _SplitsTab({required this.bottomPadding});
+
+  final double bottomPadding;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(16),
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPadding),
+      child: const Center(
         child: Text(
             'Próximamente: splits por rival / tipo de partido / primer vs segundo tiempo.'),
       ),
@@ -651,9 +804,13 @@ class _SplitsTab extends StatelessWidget {
 }
 
 class _GameLogTab extends StatelessWidget {
-  const _GameLogTab({required this.gameLogAsync});
+  const _GameLogTab({
+    required this.gameLogAsync,
+    required this.bottomPadding,
+  });
 
   final AsyncValue<List<PlayerGameLogRow>> gameLogAsync;
+  final double bottomPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -668,7 +825,7 @@ class _GameLogTab extends StatelessWidget {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPadding),
           itemCount: rows.length,
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, index) {
@@ -701,5 +858,547 @@ class _GameLogTab extends StatelessWidget {
         if (gameType == 'interno') return 'Interno';
         return 'Torneo';
     }
+  }
+}
+
+class _CombineTab extends ConsumerStatefulWidget {
+  const _CombineTab({
+    required this.seasonId,
+    required this.playerId,
+    required this.bottomPadding,
+    this.onCreateSession,
+    this.onEditResults,
+  });
+
+  final String? seasonId;
+  final String playerId;
+  final double bottomPadding;
+  final VoidCallback? onCreateSession;
+  final void Function(
+    CombineSession session,
+    List<CombineTest> tests,
+    Map<String, CombineResult> currentByTestId,
+  )? onEditResults;
+
+  @override
+  ConsumerState<_CombineTab> createState() => _CombineTabState();
+}
+
+class _CombineTabState extends ConsumerState<_CombineTab> {
+  String? _selectedSessionId;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.seasonId == null) {
+      return const EmptyState(
+        title: 'Sin temporada activa',
+        message: 'Selecciona una temporada para capturar Combine.',
+        icon: Icons.calendar_month_outlined,
+      );
+    }
+
+    final sessionsAsync = ref.watch(combineSessionsByActiveSeasonProvider);
+    final testsAsync = ref.watch(combineTestsProvider);
+    if (sessionsAsync.isLoading || testsAsync.isLoading) {
+      return const Loading(message: 'Cargando combine...');
+    }
+    if (sessionsAsync.hasError) {
+      return Center(
+          child: Text('Error cargando sesiones: ${sessionsAsync.error}'));
+    }
+    if (testsAsync.hasError) {
+      return Center(child: Text('Error cargando pruebas: ${testsAsync.error}'));
+    }
+
+    final sessions = sessionsAsync.valueOrNull ?? const <CombineSession>[];
+    final tests = testsAsync.valueOrNull ?? const <CombineTest>[];
+
+    if (sessions.isEmpty) {
+      return ListView(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, widget.bottomPadding),
+        children: [
+          const EmptyState(
+            title: 'Sin sesiones de Combine',
+            message: 'Crea una sesión para comenzar a capturar resultados.',
+            icon: Icons.fitness_center_outlined,
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: widget.onCreateSession,
+            icon: const Icon(Icons.add),
+            label: const Text('Crear sesión'),
+          ),
+        ],
+      );
+    }
+
+    _selectedSessionId ??= sessions.first.id;
+    final selectedSession = sessions.firstWhere(
+      (session) => session.id == _selectedSessionId,
+      orElse: () => sessions.first,
+    );
+    final resultsAsync = ref.watch(
+      combinePlayerResultsProvider(
+        (
+          sessionId: selectedSession.id,
+          playerId: widget.playerId,
+        ),
+      ),
+    );
+
+    return resultsAsync.when(
+      data: (currentByTestId) {
+        return ListView(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, widget.bottomPadding),
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: selectedSession.id,
+              decoration: const InputDecoration(labelText: 'Sesión'),
+              items: sessions
+                  .map(
+                    (session) => DropdownMenuItem(
+                      value: session.id,
+                      child: Text(
+                        '${session.nombre} • ${AppFormatters.date(session.fecha)}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _selectedSessionId = value);
+              },
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: widget.onCreateSession,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Crear sesión'),
+                ),
+                FilledButton.icon(
+                  onPressed: widget.onEditResults == null
+                      ? null
+                      : () => widget.onEditResults!(
+                            selectedSession,
+                            tests,
+                            currentByTestId,
+                          ),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Registrar/Editar resultados'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (tests.isEmpty)
+              const EmptyState(
+                title: 'Sin pruebas activas',
+                message: 'No hay pruebas de combine activas para mostrar.',
+                icon: Icons.list_alt_outlined,
+              )
+            else
+              ...tests.map((test) {
+                final result = currentByTestId[test.id];
+                final hasValue = result != null;
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    title: Text(test.nombre),
+                    subtitle: Text(
+                      hasValue
+                          ? _buildResultLabel(test, result)
+                          : 'Sin registro',
+                    ),
+                    trailing: Chip(
+                      label: Text(hasValue ? 'Registrado' : 'Pendiente'),
+                    ),
+                  ),
+                );
+              }),
+          ],
+        );
+      },
+      loading: () => const Loading(message: 'Cargando resultados...'),
+      error: (error, _) => Center(child: Text('Error: $error')),
+    );
+  }
+
+  String _buildResultLabel(CombineTest test, CombineResult result) {
+    final base = '${result.valor} ${test.unidad}';
+    if (test.codigo != 'dash_40') return base;
+    final splits = <String>[];
+    if (result.split10 != null) splits.add('10y: ${result.split10}');
+    if (result.split20 != null) splits.add('20y: ${result.split20}');
+    if (splits.isEmpty) return base;
+    return '$base • ${splits.join(' · ')}';
+  }
+}
+
+class _CreateCombineSessionSheet extends ConsumerStatefulWidget {
+  const _CreateCombineSessionSheet({
+    required this.seasonId,
+    required this.onSaved,
+  });
+
+  final String seasonId;
+  final VoidCallback onSaved;
+
+  @override
+  ConsumerState<_CreateCombineSessionSheet> createState() =>
+      _CreateCombineSessionSheetState();
+}
+
+class _CreateCombineSessionSheetState
+    extends ConsumerState<_CreateCombineSessionSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _nombreController = TextEditingController();
+  final _notasController = TextEditingController();
+  DateTime _fecha = DateTime.now();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _notasController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickFecha() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _fecha,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    setState(() => _fecha = DateTime(picked.year, picked.month, picked.day));
+  }
+
+  Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(combineRepoProvider).createSession(
+            seasonId: widget.seasonId,
+            nombre: _nombreController.text.trim(),
+            fecha: _fecha,
+            notas: _notasController.text.trim(),
+          );
+      if (!mounted) return;
+      widget.onSaved();
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo crear sesión: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Crear sesión de Combine',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _nombreController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre',
+                    hintText: 'Ej. Combine Marzo 2026',
+                  ),
+                  validator: (value) =>
+                      (value ?? '').trim().isEmpty ? 'Requerido' : null,
+                ),
+                const SizedBox(height: 10),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Fecha'),
+                  subtitle: Text(AppFormatters.date(_fecha)),
+                  trailing: TextButton(
+                    onPressed: _saving ? null : _pickFecha,
+                    child: const Text('Cambiar'),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _notasController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Notas'),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _saving ? null : _save,
+                    child: Text(_saving ? 'Guardando...' : 'Guardar sesión'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CombineResultsSheet extends ConsumerStatefulWidget {
+  const _CombineResultsSheet({
+    required this.seasonId,
+    required this.playerId,
+    required this.session,
+    required this.tests,
+    required this.currentByTestId,
+    required this.onSaved,
+  });
+
+  final String seasonId;
+  final String playerId;
+  final CombineSession session;
+  final List<CombineTest> tests;
+  final Map<String, CombineResult> currentByTestId;
+  final VoidCallback onSaved;
+
+  @override
+  ConsumerState<_CombineResultsSheet> createState() =>
+      _CombineResultsSheetState();
+}
+
+class _CombineResultsSheetState extends ConsumerState<_CombineResultsSheet> {
+  late final Map<String, TextEditingController> _valueControllers;
+  final Map<String, TextEditingController> _split10Controllers = {};
+  final Map<String, TextEditingController> _split20Controllers = {};
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _valueControllers = {
+      for (final test in widget.tests)
+        test.id: TextEditingController(
+          text: widget.currentByTestId[test.id]?.valor.toString() ?? '',
+        ),
+    };
+
+    for (final test in widget.tests.where((test) => test.codigo == 'dash_40')) {
+      final current = widget.currentByTestId[test.id];
+      _split10Controllers[test.id] =
+          TextEditingController(text: current?.split10?.toString() ?? '');
+      _split20Controllers[test.id] =
+          TextEditingController(text: current?.split20?.toString() ?? '');
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _valueControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _split10Controllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _split20Controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  double? _tryParse(String text) {
+    final clean = text.trim().replaceAll(',', '.');
+    if (clean.isEmpty) return null;
+    return double.tryParse(clean);
+  }
+
+  Future<void> _save() async {
+    final inputs = <CombineResultInput>[];
+    for (final test in widget.tests) {
+      final raw = _valueControllers[test.id]!.text;
+      final value = _tryParse(raw);
+      if (value == null) continue;
+
+      Map<String, dynamic>? extras;
+      if (test.codigo == 'dash_40') {
+        extras = buildCombineExtras(
+          split10: _tryParse(_split10Controllers[test.id]?.text ?? ''),
+          split20: _tryParse(_split20Controllers[test.id]?.text ?? ''),
+        );
+      }
+
+      inputs.add(
+        CombineResultInput(
+          testId: test.id,
+          valor: value,
+          extras: extras,
+          intento: 1,
+        ),
+      );
+    }
+
+    if (inputs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Captura al menos un resultado.')),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      await ref.read(combineRepoProvider).upsertPlayerResults(
+            sessionId: widget.session.id,
+            playerId: widget.playerId,
+            results: inputs,
+          );
+      if (!mounted) return;
+      widget.onSaved();
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudieron guardar resultados: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Resultados Combine',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${widget.session.nombre} • ${AppFormatters.date(widget.session.fecha)}',
+              ),
+              const SizedBox(height: 12),
+              ...widget.tests.map((test) {
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          test.nombre,
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _valueControllers[test.id],
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Valor (${test.unidad})',
+                          ),
+                        ),
+                        if (test.codigo == 'dash_40') ...[
+                          const SizedBox(height: 8),
+                          ExpansionTile(
+                            title: const Text('Avanzado (opcional)'),
+                            tilePadding: EdgeInsets.zero,
+                            childrenPadding: EdgeInsets.zero,
+                            children: [
+                              TextFormField(
+                                controller: _split10Controllers[test.id],
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                decoration: const InputDecoration(
+                                    labelText: 'Split 10y'),
+                              ),
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                controller: _split20Controllers[test.id],
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                decoration: const InputDecoration(
+                                    labelText: 'Split 20y'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _saving ? null : _save,
+                  child: Text(_saving ? 'Guardando...' : 'Guardar resultados'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TabBarHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _TabBarHeaderDelegate({required this.child});
+
+  final PreferredSizeWidget child;
+
+  @override
+  double get minExtent => child.preferredSize.height;
+
+  @override
+  double get maxExtent => child.preferredSize.height;
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return child;
+  }
+
+  @override
+  bool shouldRebuild(covariant _TabBarHeaderDelegate oldDelegate) {
+    return oldDelegate.child != child;
   }
 }

@@ -19,6 +19,7 @@ import '../../features/payments/ui/weekly_summary_page.dart';
 import '../../features/players/player_data_quality_page.dart';
 import '../../features/players/player_form_page.dart';
 import '../../features/players/player_profile_page.dart';
+import '../../features/players/combine_rankings_page.dart';
 import '../../features/seasons/season_detail_page.dart';
 import '../../features/players/players_list_page.dart';
 import '../../features/seasons/season_picker_page.dart';
@@ -128,6 +129,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/combine-rankings',
+        builder: (context, state) => const CombineRankingsPage(),
+      ),
+      GoRoute(
         path: '/payments',
         builder: (context, state) => const PaymentsPage(),
       ),
@@ -137,6 +142,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           initialWeekStart: DateTime.tryParse(
             state.uri.queryParameters['weekStart'] ?? '',
           ),
+          mode: (state.uri.queryParameters['mode'] ?? 'training') == 'uniform'
+              ? PaymentsSummaryMode.uniform
+              : PaymentsSummaryMode.training,
+          initialCampaignId: state.uri.queryParameters['campaignId'],
         ),
       ),
       GoRoute(

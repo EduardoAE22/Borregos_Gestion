@@ -9,4 +9,5 @@ class AppStrings {
   static const games = 'Partidos';
   static const awards = 'Premios';
   static const playerOfMonth = 'Jugador del Mes';
+  static const combineRankings = 'Rankings Combine';
 }

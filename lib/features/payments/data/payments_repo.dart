@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../domain/payment.dart';
+import '../domain/weekly_payments_board.dart';
 import '../domain/weekly_summary.dart';
 import '../../settings/data/settings_repo.dart';
 
@@ -429,9 +430,22 @@ class PaymentsRepo {
       byPlayerAmount[player['id'] as UUID] = 0;
     }
 
+    final weeklyFeeAmount = await settingsRepo.getWeeklyFeeAmount();
+    final conceptAmountData = await _client
+        .from('payment_concepts')
+        .select('amount')
+        .eq('id', semanaConceptId)
+        .maybeSingle();
+    final conceptAmount = conceptAmountData == null
+        ? 0.0
+        : _parseNumeric(conceptAmountData['amount']);
+    final expectedAmount = weeklyFeeAmount > 0
+        ? weeklyFeeAmount
+        : (conceptAmount > 0 ? conceptAmount : fallbackWeeklyFeeAmount);
+
     final paymentsData = await _client
         .from('payments')
-        .select('player_id, amount')
+        .select('player_id, paid_amount, status')
         .eq('season_id', seasonId)
         .eq('concept_id', semanaConceptId)
         .gte('paid_at', normalizedStart.toIso8601String())
@@ -442,31 +456,45 @@ class PaymentsRepo {
     for (final row in rows) {
       final playerId = row['player_id'] as UUID;
       if (!byPlayerAmount.containsKey(playerId)) continue;
-      final amount = row['amount'] is num
-          ? (row['amount'] as num).toDouble()
-          : double.tryParse(row['amount']?.toString() ?? '') ?? 0;
+      final normalizedStatus = (row['status'] as String? ?? '').trim();
+      if (normalizedStatus.toLowerCase() != 'paid' &&
+          normalizedStatus.toLowerCase() != 'partial') {
+        continue;
+      }
+      final amount = _parseNumeric(row['paid_amount']);
+      if (amount <= 0) continue;
       byPlayerAmount[playerId] = (byPlayerAmount[playerId] ?? 0) + amount;
     }
 
     var totalPaid = 0.0;
     var paidPlayers = 0;
+    var partialPlayers = 0;
     final byPlayer = players.map((player) {
       final playerId = player['id'] as UUID;
       final firstName = player['first_name'] as String? ?? '';
       final lastName = player['last_name'] as String? ?? '';
       final jersey = player['jersey_number'];
       final amountPaidThisWeek = byPlayerAmount[playerId] ?? 0;
-      final paidThisWeek = amountPaidThisWeek > 0;
-      final pending = !paidThisWeek;
+      final state = resolvePaymentState(
+        amountPaid: amountPaidThisWeek,
+        amountExpected: expectedAmount,
+      );
+      final paidThisWeek = state == PaymentState.paid;
+      final pending = state == PaymentState.pending;
 
-      if (paidThisWeek) {
-        paidPlayers += 1;
-      }
+      if (state == PaymentState.paid) paidPlayers += 1;
+      if (state == PaymentState.partial) partialPlayers += 1;
       totalPaid += amountPaidThisWeek;
 
       return PlayerWeeklySummary(
         playerId: playerId,
         playerName: '#${jersey ?? '-'} ${'$firstName $lastName'.trim()}',
+        paymentState: switch (state) {
+          PaymentState.pending => 'pending',
+          PaymentState.partial => 'partial',
+          PaymentState.paid => 'paid',
+        },
+        requiredAmount: expectedAmount,
         paidThisWeek: paidThisWeek,
         amountPaidThisWeek: amountPaidThisWeek,
         pending: pending,
@@ -484,7 +512,8 @@ class PaymentsRepo {
       totalPaid: totalPaid,
       totalPlayers: totalPlayers,
       paidPlayers: paidPlayers,
-      pendingPlayers: totalPlayers - paidPlayers,
+      partialPlayers: partialPlayers,
+      pendingPlayers: totalPlayers - paidPlayers - partialPlayers,
       byPlayer: byPlayer,
     );
   }
@@ -500,6 +529,12 @@ class PaymentsRepo {
           .toIso8601String()
           .split('T')
           .first;
+
+  static double _parseNumeric(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0;
+    return 0;
+  }
 
   String? _extractReceiptPath(String? value) {
     if (value == null || value.trim().isEmpty) return null;

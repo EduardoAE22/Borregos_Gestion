@@ -138,6 +138,21 @@ class _PlayersListPageState extends ConsumerState<PlayersListPage> {
     return AppScaffold(
       title: AppStrings.players,
       selectedNavIndex: 0,
+      actions: [
+        PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'combine_rankings') {
+              context.push('/combine-rankings');
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: 'combine_rankings',
+              child: Text(AppStrings.combineRankings),
+            ),
+          ],
+        ),
+      ],
       body: WatermarkedBody(
         child: profileAsync.when(
           data: (profile) {
@@ -210,36 +225,64 @@ class _PlayersListPageState extends ConsumerState<PlayersListPage> {
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Column(
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Temporada activa: ${season.name}',
-                                  style:
-                                      Theme.of(context).textTheme.titleMedium,
-                                ),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () {
-                                  _resetPerfTracking();
-                                  ref.invalidate(playersByActiveSeasonProvider);
-                                  ref.invalidate(
-                                      playersBySeasonProvider(season.id));
-                                  ref.invalidate(
-                                      activeSeasonPlayersBundleProvider);
-                                },
-                                icon: const Icon(Icons.refresh_outlined),
-                                label: const Text('Refrescar'),
-                              ),
-                              const SizedBox(width: 8),
-                              FilledButton.icon(
-                                onPressed: canWrite
-                                    ? () => context.push('/players/new')
-                                    : null,
-                                icon: const Icon(Icons.person_add_alt_1),
-                                label: const Text('Agregar'),
-                              ),
-                            ],
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final compact = constraints.maxWidth < 900;
+                              final actions = Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: () {
+                                      _resetPerfTracking();
+                                      ref.invalidate(
+                                          playersByActiveSeasonProvider);
+                                      ref.invalidate(
+                                          playersBySeasonProvider(season.id));
+                                      ref.invalidate(
+                                          activeSeasonPlayersBundleProvider);
+                                    },
+                                    icon: const Icon(Icons.refresh_outlined),
+                                    label: const Text('Refrescar'),
+                                  ),
+                                  FilledButton.icon(
+                                    onPressed: canWrite
+                                        ? () => context.push('/players/new')
+                                        : null,
+                                    icon: const Icon(Icons.person_add_alt_1),
+                                    label: const Text('Agregar'),
+                                  ),
+                                ],
+                              );
+                              if (compact) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Temporada activa: ${season.name}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    actions,
+                                  ],
+                                );
+                              }
+                              return Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Temporada activa: ${season.name}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium,
+                                    ),
+                                  ),
+                                  Flexible(child: actions),
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: 10),
                           TextField(

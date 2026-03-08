@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../players/domain/player.dart';
 import '../../players/providers/players_providers.dart';
 import '../../seasons/providers/seasons_providers.dart';
+import '../../settings/providers/settings_providers.dart';
 import '../data/payments_repo.dart';
 import '../domain/payment.dart';
 import '../domain/uniform_campaign.dart';
@@ -64,6 +65,21 @@ final weeklyPaymentConceptProvider = FutureProvider<String?>((ref) async {
 
 final uniformPaymentConceptProvider = FutureProvider<String?>((ref) async {
   return ref.read(paymentsRepoProvider).getPaymentConceptUniform();
+});
+
+final trainingExpectedWeeklyAmountProvider =
+    FutureProvider<double>((ref) async {
+  final settingsAmount = await ref.watch(weeklyFeeAmountProvider.future);
+  if (settingsAmount > 0) return settingsAmount;
+
+  final concepts = await ref.watch(paymentConceptsProvider.future);
+  final weeklyConcept = concepts.cast<PaymentConcept?>().firstWhere(
+        (concept) => concept?.paymentCategory == PaymentCategory.training,
+        orElse: () => null,
+      );
+  final conceptAmount = weeklyConcept?.amount ?? 0;
+  if (conceptAmount > 0) return conceptAmount;
+  return fallbackWeeklyFeeAmount;
 });
 
 final seasonPlayersForPaymentProvider =
@@ -211,13 +227,21 @@ final debtByPlayerByCategoryProvider = FutureProvider.family<
 final weeklyPaymentStatusByPlayerProvider =
     FutureProvider.family<Map<String, WeeklyPaymentStatus>, DateTime>(
         (ref, weekStart) async {
-  return ref.watch(
-    paymentStatusMapByCategoryProvider(
+  final players = await ref.watch(activeSeasonActivePlayersProvider.future);
+  final weeklyPayments = await ref.watch(
+    weeklyPaymentsByCategoryProvider(
       (
         weekStart: weekStart,
         category: PaymentCategory.training,
       ),
     ).future,
+  );
+  final expectedAmount =
+      await ref.watch(trainingExpectedWeeklyAmountProvider.future);
+  return buildTrainingWeeklyStatusMap(
+    players: players,
+    payments: weeklyPayments,
+    weeklyExpectedAmount: expectedAmount,
   );
 });
 

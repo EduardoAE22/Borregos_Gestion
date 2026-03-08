@@ -2,6 +2,13 @@ import '../../players/domain/player.dart';
 import 'payment.dart';
 
 final trainingFeeStartDate = DateTime(2026, 3, 9);
+const fallbackWeeklyFeeAmount = 130.0;
+
+enum PaymentState {
+  pending,
+  partial,
+  paid,
+}
 
 enum WeeklyPaymentState {
   unpaid,
@@ -12,6 +19,7 @@ enum WeeklyPaymentState {
 class WeeklyPaymentStatus {
   const WeeklyPaymentStatus({
     required this.state,
+    required this.paymentState,
     required this.amountExpected,
     required this.amountPaid,
     this.currentPayment,
@@ -20,6 +28,7 @@ class WeeklyPaymentStatus {
   });
 
   final WeeklyPaymentState state;
+  final PaymentState paymentState;
   final double amountExpected;
   final double amountPaid;
   final PaymentRow? currentPayment;
@@ -44,6 +53,7 @@ class WeeklyPaymentsDashboardData {
     required this.players,
     required this.totalActivePlayers,
     required this.paidPlayers,
+    required this.partialPlayers,
     required this.pendingPlayers,
     required this.totalDebts,
   });
@@ -51,8 +61,20 @@ class WeeklyPaymentsDashboardData {
   final List<WeeklyPlayerPaymentCardData> players;
   final int totalActivePlayers;
   final int paidPlayers;
+  final int partialPlayers;
   final int pendingPlayers;
   final int totalDebts;
+}
+
+PaymentState resolvePaymentState({
+  required double amountPaid,
+  required double amountExpected,
+}) {
+  if (amountPaid <= 0) return PaymentState.pending;
+  if (amountExpected > 0 && amountPaid < amountExpected) {
+    return PaymentState.partial;
+  }
+  return PaymentState.paid;
 }
 
 bool playerMatchesSearch(Player player, String query) {
@@ -118,13 +140,18 @@ Map<String, WeeklyPaymentStatus> buildWeeklyPaymentStatusMap(
     final latest = rows.first;
     final hasPartial =
         rows.any((payment) => payment.status.trim().toLowerCase() == 'partial');
-    final isPartial = (totalExpected > 0 && totalPaid < totalExpected) ||
-        (totalExpected <= 0 && hasPartial);
+    final paymentState = resolvePaymentState(
+      amountPaid: totalPaid,
+      amountExpected: totalExpected,
+    );
+    final isPartial = paymentState == PaymentState.partial ||
+        (paymentState == PaymentState.paid && hasPartial && totalExpected <= 0);
 
     return MapEntry(
       playerId,
       WeeklyPaymentStatus(
         state: isPartial ? WeeklyPaymentState.partial : WeeklyPaymentState.paid,
+        paymentState: isPartial ? PaymentState.partial : PaymentState.paid,
         amountExpected: totalExpected,
         amountPaid: totalPaid,
         currentPayment: latest,
@@ -146,6 +173,56 @@ Map<String, WeeklyPaymentStatus> buildWeeklyPaymentStatusMap(
       ),
     );
   });
+}
+
+Map<String, WeeklyPaymentStatus> buildTrainingWeeklyStatusMap({
+  required List<Player> players,
+  required List<PaymentRow> payments,
+  required double weeklyExpectedAmount,
+}) {
+  final grouped = <String, List<PaymentRow>>{};
+  for (final payment in payments) {
+    if (payment.paymentCategory != PaymentCategory.training) continue;
+    final normalizedStatus = payment.status.trim().toLowerCase();
+    if ((normalizedStatus != 'paid' && normalizedStatus != 'partial') ||
+        payment.paidAmount <= 0) {
+      continue;
+    }
+    grouped.putIfAbsent(payment.playerId, () => <PaymentRow>[]).add(payment);
+  }
+
+  final normalizedExpected =
+      weeklyExpectedAmount > 0 ? weeklyExpectedAmount : fallbackWeeklyFeeAmount;
+  final map = <String, WeeklyPaymentStatus>{};
+
+  for (final player in players) {
+    final playerId = player.id!;
+    final rows = [...(grouped[playerId] ?? const <PaymentRow>[])]
+      ..sort((a, b) => b.paidAt.compareTo(a.paidAt));
+    final totalPaid = rows.fold<double>(0, (sum, row) => sum + row.paidAmount);
+    final paymentState = resolvePaymentState(
+      amountPaid: totalPaid,
+      amountExpected: normalizedExpected,
+    );
+    final latest = rows.isEmpty ? null : rows.first;
+    final weeklyState = switch (paymentState) {
+      PaymentState.pending => WeeklyPaymentState.unpaid,
+      PaymentState.partial => WeeklyPaymentState.partial,
+      PaymentState.paid => WeeklyPaymentState.paid,
+    };
+
+    map[playerId] = WeeklyPaymentStatus(
+      state: weeklyState,
+      paymentState: paymentState,
+      amountExpected: normalizedExpected,
+      amountPaid: totalPaid,
+      currentPayment: latest,
+      paidAt: latest?.paidAt,
+      receiptUrl: latest?.receiptUrl,
+    );
+  }
+
+  return map;
 }
 
 Map<String, int> calculatePlayerDebtCounts({
@@ -195,6 +272,7 @@ WeeklyPaymentsDashboardData buildWeeklyPaymentsDashboard({
     final status = weeklyStatusByPlayer[player.id!] ??
         const WeeklyPaymentStatus(
           state: WeeklyPaymentState.unpaid,
+          paymentState: PaymentState.pending,
           amountExpected: 0,
           amountPaid: 0,
         );
@@ -208,13 +286,19 @@ WeeklyPaymentsDashboardData buildWeeklyPaymentsDashboard({
   final paidPlayers = cards
       .where((card) => card.weekStatus.state == WeeklyPaymentState.paid)
       .length;
-  final pendingPlayers = cards.length - paidPlayers;
+  final partialPlayers = cards
+      .where((card) => card.weekStatus.state == WeeklyPaymentState.partial)
+      .length;
+  final pendingPlayers = cards
+      .where((card) => card.weekStatus.state == WeeklyPaymentState.unpaid)
+      .length;
   final totalDebts = cards.fold<int>(0, (sum, card) => sum + card.debtCount);
 
   return WeeklyPaymentsDashboardData(
     players: cards,
     totalActivePlayers: cards.length,
     paidPlayers: paidPlayers,
+    partialPlayers: partialPlayers,
     pendingPlayers: pendingPlayers,
     totalDebts: totalDebts,
   );

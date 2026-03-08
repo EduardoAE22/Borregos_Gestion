@@ -103,175 +103,196 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
 
                 return DefaultTabController(
                   length: 2,
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              crossAxisAlignment: WrapCrossAlignment.center,
+                  child: NestedScrollView(
+                    headerSliverBuilder: (context, innerBoxIsScrolled) {
+                      return [
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                SizedBox(
-                                  width:
-                                      isCompact ? media.size.width - 32 : 320,
-                                  child: DropdownButtonFormField<String>(
-                                    initialValue: season.id,
-                                    decoration: const InputDecoration(
-                                        labelText: 'Temporada'),
-                                    items: seasons
-                                        .map(
-                                          (s) => DropdownMenuItem<String>(
-                                            value: s.id,
-                                            child: Text(s.name),
-                                          ),
-                                        )
-                                        .toList(),
-                                    onChanged: (value) {
-                                      if (value == null) return;
-                                      setState(() => _selectedSeasonId = value);
-                                    },
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: isCompact
+                                          ? media.size.width - 32
+                                          : 320,
+                                      child: DropdownButtonFormField<String>(
+                                        initialValue: season.id,
+                                        decoration: const InputDecoration(
+                                            labelText: 'Temporada'),
+                                        items: seasons
+                                            .map(
+                                              (s) => DropdownMenuItem<String>(
+                                                value: s.id,
+                                                child: Text(s.name),
+                                              ),
+                                            )
+                                            .toList(),
+                                        onChanged: (value) {
+                                          if (value == null) return;
+                                          setState(
+                                              () => _selectedSeasonId = value);
+                                        },
+                                      ),
+                                    ),
+                                    OutlinedButton.icon(
+                                      onPressed: () =>
+                                          context.push('/uniformes/requisitos'),
+                                      icon: const Icon(Icons.info_outline),
+                                      label: const Text('Requisitos'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    Chip(
+                                        label: Text(
+                                            'Total líneas: ${orderRows.length}')),
+                                    Chip(
+                                        label: Text(
+                                            'Total jerseys: $totalJerseys')),
+                                    Chip(
+                                        label:
+                                            Text('Faltan talla: $missingSize')),
+                                    Chip(
+                                        label: Text(
+                                            'Falta género: $missingGender')),
+                                    Chip(
+                                        label: Text(
+                                            'Falta número: $missingNumber')),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                SwitchListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: const Text(
+                                      'Número obligatorio (solo jugadores)'),
+                                  value: _numberRequired,
+                                  onChanged: (value) =>
+                                      setState(() => _numberRequired = value),
+                                ),
+                                Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    if (missingSize +
+                                            missingGender +
+                                            missingNumber >
+                                        0)
+                                      TextButton.icon(
+                                        onPressed: () =>
+                                            _showMissingDialog(context, lines),
+                                        icon: const Icon(
+                                            Icons.warning_amber_outlined),
+                                        label: const Text('Ver faltantes'),
+                                      ),
+                                    TextButton.icon(
+                                      onPressed: () => context.push(
+                                        '/uniformes/calidad?season=$seasonId&missing=&numberRequired=${_numberRequired ? '1' : '0'}',
+                                      ),
+                                      icon:
+                                          const Icon(Icons.fact_check_outlined),
+                                      label: const Text('Calidad de datos'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Card(
+                                  child: ExpansionTile(
+                                    title:
+                                        const Text('Requisitos del proveedor'),
+                                    leading:
+                                        const Icon(Icons.rule_folder_outlined),
+                                    childrenPadding: const EdgeInsets.fromLTRB(
+                                        16, 0, 16, 12),
+                                    expandedCrossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: const [
+                                      Text(
+                                          'Formato obligatorio: No. | Nombre | Número # | Talla | Género'),
+                                      SizedBox(height: 6),
+                                      Text('No. = consecutivo por fila (1..N)'),
+                                      SizedBox(height: 6),
+                                      Text(
+                                          'Tallas adultos: XS,S,M,L,XL,2XL,3XL'),
+                                      SizedBox(height: 6),
+                                      Text('Tallas niños: 2,4,6,8,10,12,14,16'),
+                                      SizedBox(height: 6),
+                                      Text('Género: H, M, Niña, Niño'),
+                                      SizedBox(height: 6),
+                                      Text(
+                                          'No nos hacemos responsables por errores en tallas'),
+                                    ],
                                   ),
                                 ),
-                                OutlinedButton.icon(
-                                  onPressed: () =>
-                                      context.push('/uniformes/requisitos'),
-                                  icon: const Icon(Icons.info_outline),
-                                  label: const Text('Requisitos'),
-                                ),
+                                const SizedBox(height: 6),
                               ],
                             ),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                Chip(
-                                    label: Text(
-                                        'Total líneas: ${orderRows.length}')),
-                                Chip(
-                                    label:
-                                        Text('Total jerseys: $totalJerseys')),
-                                Chip(label: Text('Faltan talla: $missingSize')),
-                                Chip(
-                                    label:
-                                        Text('Falta género: $missingGender')),
-                                Chip(
-                                    label:
-                                        Text('Falta número: $missingNumber')),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            SwitchListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text(
-                                  'Número obligatorio (solo jugadores)'),
-                              value: _numberRequired,
-                              onChanged: (value) =>
-                                  setState(() => _numberRequired = value),
-                            ),
-                            Wrap(
-                              spacing: 8,
-                              children: [
-                                if (missingSize +
-                                        missingGender +
-                                        missingNumber >
-                                    0)
-                                  TextButton.icon(
-                                    onPressed: () =>
-                                        _showMissingDialog(context, lines),
-                                    icon: const Icon(
-                                        Icons.warning_amber_outlined),
-                                    label: const Text('Ver faltantes'),
-                                  ),
-                                TextButton.icon(
-                                  onPressed: () => context.push(
-                                    '/uniformes/calidad?season=$seasonId&missing=&numberRequired=${_numberRequired ? '1' : '0'}',
-                                  ),
-                                  icon: const Icon(Icons.fact_check_outlined),
-                                  label: const Text('Calidad de datos'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Card(
-                              child: ExpansionTile(
-                                title: const Text('Requisitos del proveedor'),
-                                leading: const Icon(Icons.rule_folder_outlined),
-                                childrenPadding:
-                                    const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                                expandedCrossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: const [
-                                  Text(
-                                      'Formato obligatorio: No. | Nombre | Número # | Talla | Género'),
-                                  SizedBox(height: 6),
-                                  Text('No. = consecutivo por fila (1..N)'),
-                                  SizedBox(height: 6),
-                                  Text('Tallas adultos: XS,S,M,L,XL,2XL,3XL'),
-                                  SizedBox(height: 6),
-                                  Text('Tallas niños: 2,4,6,8,10,12,14,16'),
-                                  SizedBox(height: 6),
-                                  Text('Género: H, M, Niña, Niño'),
-                                  SizedBox(height: 6),
-                                  Text(
-                                      'No nos hacemos responsables por errores en tallas'),
+                          ),
+                        ),
+                        SliverPersistentHeader(
+                          pinned: true,
+                          delegate: _TabBarHeaderDelegate(
+                            const Material(
+                              color: Colors.transparent,
+                              child: TabBar(
+                                tabs: [
+                                  Tab(text: 'Pedido'),
+                                  Tab(text: 'Extras'),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 6),
-                            const TabBar(
-                              tabs: [
-                                Tab(text: 'Pedido'),
-                                Tab(text: 'Extras'),
-                              ],
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                      Expanded(
-                        child: TabBarView(
-                          children: [
-                            _OrderTab(
-                              rows: orderRows,
-                              isWeb: kIsWeb,
-                              bottomInset: viewPadding.bottom + 12,
-                              onExport: () => _exportOrder(
-                                context: context,
-                                season: season,
-                                lines: lines,
-                                numberRequired: _numberRequired,
-                              ),
-                              onShare: () => _shareOrder(
-                                context: context,
-                                season: season,
-                                lines: lines,
-                              ),
-                              onExportSizes: () => _exportSizesSummary(
-                                context: context,
-                                season: season,
-                                lines: lines,
-                              ),
-                            ),
-                            _ExtrasTab(
-                              extras: extras,
-                              canWrite: canWrite,
-                              bottomInset: viewPadding.bottom + 12,
-                              onAdd: () => _openExtraDialog(context, seasonId,
-                                  canWrite: canWrite),
-                              onEdit: (extra) => _openExtraDialog(
-                                  context, seasonId,
-                                  initial: extra, canWrite: canWrite),
-                              onDelete: (extra) => _deleteExtra(context, extra,
-                                  canWrite: canWrite),
-                            ),
-                          ],
+                      ];
+                    },
+                    body: TabBarView(
+                      children: [
+                        _OrderTab(
+                          rows: orderRows,
+                          isWeb: kIsWeb,
+                          bottomInset: viewPadding.bottom +
+                              kBottomNavigationBarHeight +
+                              16,
+                          onExport: () => _exportOrder(
+                            context: context,
+                            season: season,
+                            lines: lines,
+                            numberRequired: _numberRequired,
+                          ),
+                          onShare: () => _shareOrder(
+                            context: context,
+                            season: season,
+                            lines: lines,
+                          ),
+                          onExportSizes: () => _exportSizesSummary(
+                            context: context,
+                            season: season,
+                            lines: lines,
+                          ),
                         ),
-                      ),
-                    ],
+                        _ExtrasTab(
+                          extras: extras,
+                          canWrite: canWrite,
+                          bottomInset: viewPadding.bottom +
+                              kBottomNavigationBarHeight +
+                              16,
+                          onAdd: () => _openExtraDialog(context, seasonId,
+                              canWrite: canWrite),
+                          onEdit: (extra) => _openExtraDialog(context, seasonId,
+                              initial: extra, canWrite: canWrite),
+                          onDelete: (extra) =>
+                              _deleteExtra(context, extra, canWrite: canWrite),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -681,7 +702,8 @@ class _OrderTab extends StatelessWidget {
       );
     }
 
-    return Column(
+    return ListView(
+      padding: EdgeInsets.only(bottom: bottomInset),
       children: [
         Align(
           alignment: Alignment.centerRight,
@@ -731,31 +753,28 @@ class _OrderTab extends StatelessWidget {
             ),
           ),
         ),
-        Expanded(
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
           child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SingleChildScrollView(
-              padding: EdgeInsets.only(bottom: bottomInset),
-              child: DataTable(
-                columns: const [
-                  DataColumn(label: Text('No.')),
-                  DataColumn(label: Text('Nombre')),
-                  DataColumn(label: Text('Número #')),
-                  DataColumn(label: Text('Talla')),
-                  DataColumn(label: Text('Género')),
-                ],
-                rows: rows.map((row) {
-                  return DataRow(
-                    cells: [
-                      DataCell(Text('${row.number}')),
-                      DataCell(Text(row.name)),
-                      DataCell(Text(row.jerseyNumber?.toString() ?? '')),
-                      DataCell(Text(row.jerseySize ?? '')),
-                      DataCell(Text(row.uniformGender ?? '')),
-                    ],
-                  );
-                }).toList(),
-              ),
+            child: DataTable(
+              columns: const [
+                DataColumn(label: Text('No.')),
+                DataColumn(label: Text('Nombre')),
+                DataColumn(label: Text('Número #')),
+                DataColumn(label: Text('Talla')),
+                DataColumn(label: Text('Género')),
+              ],
+              rows: rows.map((row) {
+                return DataRow(
+                  cells: [
+                    DataCell(Text('${row.number}')),
+                    DataCell(Text(row.name)),
+                    DataCell(Text(row.jerseyNumber?.toString() ?? '')),
+                    DataCell(Text(row.jerseySize ?? '')),
+                    DataCell(Text(row.uniformGender ?? '')),
+                  ],
+                );
+              }).toList(),
             ),
           ),
         ),
@@ -783,60 +802,100 @@ class _ExtrasTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-            child: FilledButton.icon(
-              onPressed: canWrite ? onAdd : null,
-              icon: const Icon(Icons.add),
-              label: const Text('Agregar extra'),
-            ),
-          ),
-        ),
-        Expanded(
-          child: extras.isEmpty
-              ? const EmptyState(
-                  title: 'Sin extras',
-                  message:
-                      'Agrega porra, familiares, novia o staff para incluirlos en el pedido.',
-                  icon: Icons.group_add_outlined,
-                )
-              : ListView.separated(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, bottomInset),
-                  itemCount: extras.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final extra = extras[index];
-                    return Card(
-                      child: ListTile(
-                        title: Text(extra.name),
-                        subtitle: Text(
-                          'Cant: ${extra.quantity} • Num: ${extra.jerseyNumber ?? '-'} • '
-                          'Talla: ${extra.jerseySize ?? '-'} • Género: ${extra.uniformGender ?? '-'}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              onPressed: canWrite ? () => onEdit(extra) : null,
-                              icon: const Icon(Icons.edit_outlined),
-                            ),
-                            IconButton(
-                              onPressed:
-                                  canWrite ? () => onDelete(extra) : null,
-                              icon: const Icon(Icons.delete_outline),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+    return extras.isEmpty
+        ? ListView(
+            padding: EdgeInsets.only(bottom: bottomInset),
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                  child: FilledButton.icon(
+                    onPressed: canWrite ? onAdd : null,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Agregar extra'),
+                  ),
                 ),
-        ),
-      ],
+              ),
+              const EmptyState(
+                title: 'Sin extras',
+                message:
+                    'Agrega porra, familiares, novia o staff para incluirlos en el pedido.',
+                icon: Icons.group_add_outlined,
+              ),
+            ],
+          )
+        : ListView.separated(
+            padding: EdgeInsets.fromLTRB(16, 10, 16, bottomInset),
+            itemCount: extras.length + 1,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    onPressed: canWrite ? onAdd : null,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Agregar extra'),
+                  ),
+                );
+              }
+
+              final extra = extras[index - 1];
+              return Card(
+                child: ListTile(
+                  title: Text(extra.name),
+                  subtitle: Text(
+                    'Cant: ${extra.quantity} • Num: ${extra.jerseyNumber ?? '-'} • '
+                    'Talla: ${extra.jerseySize ?? '-'} • Género: ${extra.uniformGender ?? '-'}',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        onPressed: canWrite ? () => onEdit(extra) : null,
+                        icon: const Icon(Icons.edit_outlined),
+                      ),
+                      IconButton(
+                        onPressed: canWrite ? () => onDelete(extra) : null,
+                        icon: const Icon(Icons.delete_outline),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+  }
+}
+
+class _TabBarHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _TabBarHeaderDelegate(this.child);
+
+  final Widget child;
+
+  @override
+  double get minExtent => 48;
+
+  @override
+  double get maxExtent => 48;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      alignment: Alignment.centerLeft,
+      child: child,
     );
+  }
+
+  @override
+  bool shouldRebuild(covariant _TabBarHeaderDelegate oldDelegate) {
+    return oldDelegate.child != child;
   }
 }

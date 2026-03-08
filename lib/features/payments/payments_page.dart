@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/ui/app_strings.dart';
+import '../../core/utils/excel_delivery.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/open_external_url.dart';
 import '../../core/theme/brand.dart';
@@ -11,8 +12,8 @@ import '../../shared/widgets/background_watermark.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/loading.dart';
 import '../auth/providers/auth_providers.dart';
-import '../players/domain/player.dart';
 import '../seasons/providers/seasons_providers.dart';
+import 'data/payments_exporter.dart';
 import 'domain/payment.dart';
 import 'domain/uniform_campaign.dart';
 import 'domain/weekly_payments_board.dart';
@@ -21,7 +22,7 @@ import 'providers/uniform_campaigns_providers.dart';
 import 'widgets/payment_form_sheet.dart';
 import 'widgets/uniform_campaign_form_sheet.dart';
 
-enum _PaymentsBoardFilter { all, pending, paid }
+enum _PaymentsBoardFilter { all, pending, partial, paid }
 
 enum _PaymentsBoardMode { training, uniform }
 
@@ -178,6 +179,130 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
     );
   }
 
+  Future<void> _openExportSheet({
+    required DateTime weekStart,
+    required DateTime weekEnd,
+    required List<WeeklyPlayerPaymentCardData> trainingRows,
+    required UniformCampaign? selectedCampaign,
+    required List<UniformCampaignPlayerSummary> uniformRows,
+  }) async {
+    var scope = _mode == _PaymentsBoardMode.training
+        ? PaymentsExportScope.training
+        : PaymentsExportScope.uniform;
+    var format = PaymentsExportSheetMode.singleSheet;
+
+    final accepted = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Exportar Excel',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 10),
+                    const Text('Alcance'),
+                    const SizedBox(height: 6),
+                    SegmentedButton<PaymentsExportScope>(
+                      segments: const [
+                        ButtonSegment(
+                          value: PaymentsExportScope.training,
+                          label: Text('Entrenamiento'),
+                        ),
+                        ButtonSegment(
+                          value: PaymentsExportScope.uniform,
+                          label: Text('Uniforme'),
+                        ),
+                        ButtonSegment(
+                          value: PaymentsExportScope.both,
+                          label: Text('Ambos'),
+                        ),
+                      ],
+                      selected: {scope},
+                      onSelectionChanged: (selection) {
+                        setModalState(() => scope = selection.first);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Formato'),
+                    const SizedBox(height: 6),
+                    SegmentedButton<PaymentsExportSheetMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: PaymentsExportSheetMode.singleSheet,
+                          label: Text('Una hoja'),
+                        ),
+                        ButtonSegment(
+                          value: PaymentsExportSheetMode.twoSheets,
+                          label: Text('Dos hojas'),
+                        ),
+                      ],
+                      selected: {format},
+                      onSelectionChanged: (selection) {
+                        setModalState(() => format = selection.first);
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        icon: const Icon(Icons.download_outlined),
+                        label: const Text('Exportar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (accepted != true) return;
+
+    try {
+      final bytes = PaymentsExporter.buildWorkbook(
+        scope: scope,
+        sheetMode: format,
+        weekStart: weekStart,
+        weekEnd: weekEnd,
+        trainingRows: trainingRows,
+        uniformCampaign: selectedCampaign,
+        uniformRows: uniformRows,
+      );
+      final modeLabel = switch (scope) {
+        PaymentsExportScope.training => 'entrenamiento',
+        PaymentsExportScope.uniform => 'uniforme',
+        PaymentsExportScope.both => 'ambos',
+      };
+      final fileName =
+          'pagos_${modeLabel}_${DateTime.now().toIso8601String().split('T').first}.xlsx';
+      final message = await deliverExcelBytes(
+        bytes: bytes,
+        fileName: fileName,
+        mimeType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo exportar Excel: $error')),
+      );
+    }
+  }
+
   bool _isPdfReceipt(String receiptPath) {
     final lower = receiptPath.toLowerCase();
     return lower.split('?').first.endsWith('.pdf');
@@ -267,10 +392,13 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
     return switch (_filter) {
       _PaymentsBoardFilter.all => searched,
       _PaymentsBoardFilter.pending => searched
-          .where((card) => card.weekStatus.state != WeeklyPaymentState.paid)
+          .where((card) => card.weekStatus.paymentState == PaymentState.pending)
+          .toList(),
+      _PaymentsBoardFilter.partial => searched
+          .where((card) => card.weekStatus.paymentState == PaymentState.partial)
           .toList(),
       _PaymentsBoardFilter.paid => searched
-          .where((card) => card.weekStatus.state == WeeklyPaymentState.paid)
+          .where((card) => card.weekStatus.paymentState == PaymentState.paid)
           .toList(),
     };
   }
@@ -285,7 +413,10 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
     return switch (_filter) {
       _PaymentsBoardFilter.all => cards,
       _PaymentsBoardFilter.pending => cards
-          .where((card) => card.state != UniformCampaignPaymentState.complete)
+          .where((card) => card.state == UniformCampaignPaymentState.unpaid)
+          .toList(),
+      _PaymentsBoardFilter.partial => cards
+          .where((card) => card.state == UniformCampaignPaymentState.partial)
           .toList(),
       _PaymentsBoardFilter.paid => cards
           .where((card) => card.state == UniformCampaignPaymentState.complete)
@@ -355,12 +486,12 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                   return const Loading(message: 'Cargando pagos...');
                 }
 
-                final players = playersAsync.valueOrNull ?? const <Player>[];
                 final trainingDashboard = trainingDashboardAsync.valueOrNull ??
                     const WeeklyPaymentsDashboardData(
                       players: <WeeklyPlayerPaymentCardData>[],
                       totalActivePlayers: 0,
                       paidPlayers: 0,
+                      partialPlayers: 0,
                       pendingPlayers: 0,
                       totalDebts: 0,
                     );
@@ -390,7 +521,7 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                     uniformSummariesAsync.hasError) {
                   return Center(
                     child: Text(
-                      'Error cargando campana: ${uniformSummariesAsync.error}',
+                      'Error cargando campaña: ${uniformSummariesAsync.error}',
                     ),
                   );
                 }
@@ -398,91 +529,38 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                     uniformSummariesAsync.isLoading) {
                   return const Loading(message: 'Cargando uniforme...');
                 }
+                final uniformAllSummaries = uniformSummariesAsync.valueOrNull ??
+                    const <UniformCampaignPlayerSummary>[];
                 final uniformCards = _buildUniformCards(
-                  summaries: uniformSummariesAsync.valueOrNull ??
-                      const <UniformCampaignPlayerSummary>[],
+                  summaries: uniformAllSummaries,
                 );
-                final uniformPaidPlayers = uniformCards
+                final uniformPaidPlayers = uniformAllSummaries
                     .where((card) =>
                         card.state == UniformCampaignPaymentState.complete)
                     .length;
-                final uniformPendingPlayers = uniformCards
+                final uniformPartialPlayers = uniformAllSummaries
                     .where((card) =>
-                        card.state != UniformCampaignPaymentState.complete)
+                        card.state == UniformCampaignPaymentState.partial)
                     .length;
-                final uniformTotalPaid = uniformCards.fold<double>(
+                final uniformPendingPlayers = uniformAllSummaries
+                    .where((card) =>
+                        card.state == UniformCampaignPaymentState.unpaid)
+                    .length;
+                final uniformTotalPaid = uniformAllSummaries.fold<double>(
                   0,
                   (sum, card) => sum + card.totalPaid,
                 );
 
-                return Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              SizedBox(
-                                width: isCompact ? media.size.width - 32 : null,
-                                child: Text(
-                                  'Temporada activa: ${season.name}',
-                                  style:
-                                      Theme.of(context).textTheme.titleMedium,
-                                ),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () {
-                                  final query = Uri(
-                                    queryParameters: {
-                                      'weekStart':
-                                          _selectedWeekStart.toIso8601String(),
-                                    },
-                                  ).query;
-                                  context
-                                      .push('/payments/weekly-summary?$query');
-                                },
-                                icon: const Icon(Icons.summarize_outlined),
-                                label: const Text('Resumen semanal'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: SegmentedButton<_PaymentsBoardMode>(
-                              segments: const [
-                                ButtonSegment(
-                                  value: _PaymentsBoardMode.training,
-                                  label: Text('Entrenamiento'),
-                                ),
-                                ButtonSegment(
-                                  value: _PaymentsBoardMode.uniform,
-                                  label: Text('Uniforme'),
-                                ),
-                              ],
-                              selected: {_mode},
-                              onSelectionChanged: (selection) {
-                                setState(() => _mode = selection.first);
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          if (_mode == _PaymentsBoardMode.training) ...[
-                            _WeekSelector(
-                              weekStart: _selectedWeekStart,
-                              weekEnd: _selectedWeekEnd,
-                              onPrevious: () => _shiftWeek(-7),
-                              onCurrent: _resetCurrentWeek,
-                              onNext: () => _shiftWeek(7),
-                              onPickDate: _pickWeek,
-                            ),
-                            const SizedBox(height: 10),
-                          ] else ...[
+                final bottomContentPadding =
+                    viewPadding.bottom + kBottomNavigationBarHeight + 16;
+                return CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
@@ -490,18 +568,121 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                               children: [
                                 SizedBox(
                                   width:
-                                      isCompact ? media.size.width - 32 : 320,
-                                  child: DropdownButtonFormField<String>(
+                                      isCompact ? media.size.width - 32 : null,
+                                  child: Text(
+                                    'Temporada activa: ${season.name}',
+                                    style:
+                                        Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: () {
+                                    final query = Uri(
+                                      queryParameters: {
+                                        'weekStart': _selectedWeekStart
+                                            .toIso8601String(),
+                                        'mode':
+                                            _mode == _PaymentsBoardMode.training
+                                                ? 'training'
+                                                : 'uniform',
+                                        if (_mode ==
+                                                _PaymentsBoardMode.uniform &&
+                                            selectedUniformCampaign != null)
+                                          'campaignId':
+                                              selectedUniformCampaign.id,
+                                      },
+                                    ).query;
+                                    context.push(
+                                        '/payments/weekly-summary?$query');
+                                  },
+                                  icon: const Icon(Icons.summarize_outlined),
+                                  label: Text(
+                                      _mode == _PaymentsBoardMode.training
+                                          ? 'Resumen semanal'
+                                          : 'Resumen uniforme'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: () => _openExportSheet(
+                                    weekStart: _selectedWeekStart,
+                                    weekEnd: _selectedWeekEnd,
+                                    trainingRows: trainingDashboard.players,
+                                    selectedCampaign: selectedUniformCampaign,
+                                    uniformRows: uniformSummariesAsync
+                                            .valueOrNull ??
+                                        const <UniformCampaignPlayerSummary>[],
+                                  ),
+                                  icon: const Icon(Icons.table_view_outlined),
+                                  label: const Text('Exportar Excel'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: SegmentedButton<_PaymentsBoardMode>(
+                                segments: const [
+                                  ButtonSegment(
+                                    value: _PaymentsBoardMode.training,
+                                    label: Text('Entrenamiento'),
+                                  ),
+                                  ButtonSegment(
+                                    value: _PaymentsBoardMode.uniform,
+                                    label: Text('Uniforme'),
+                                  ),
+                                ],
+                                selected: {_mode},
+                                onSelectionChanged: (selection) {
+                                  setState(() => _mode = selection.first);
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            if (_mode == _PaymentsBoardMode.training) ...[
+                              _WeekSelector(
+                                weekStart: _selectedWeekStart,
+                                weekEnd: _selectedWeekEnd,
+                                onPrevious: () => _shiftWeek(-7),
+                                onCurrent: _resetCurrentWeek,
+                                onNext: () => _shiftWeek(7),
+                                onPickDate: _pickWeek,
+                              ),
+                              const SizedBox(height: 10),
+                            ] else ...[
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final compactHeader =
+                                      isCompact || constraints.maxWidth < 980;
+                                  final dropdown =
+                                      DropdownButtonFormField<String>(
                                     key: ValueKey(selectedUniformCampaign?.id),
                                     initialValue: selectedUniformCampaign?.id,
+                                    isExpanded: true,
                                     decoration: const InputDecoration(
-                                      labelText: 'Campana de uniforme',
+                                      labelText: 'Campaña de uniforme',
                                     ),
+                                    selectedItemBuilder: (context) {
+                                      return uniformCampaigns
+                                          .map(
+                                            (campaign) => Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: Text(
+                                                campaign.name,
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 1,
+                                              ),
+                                            ),
+                                          )
+                                          .toList();
+                                    },
                                     items: uniformCampaigns
                                         .map(
                                           (campaign) => DropdownMenuItem(
                                             value: campaign.id,
-                                            child: Text(campaign.name),
+                                            child: Text(
+                                              campaign.name,
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
                                           ),
                                         )
                                         .toList(),
@@ -511,338 +692,400 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                                               () => _selectedUniformCampaignId =
                                                   value,
                                             ),
-                                  ),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: canWritePayments
-                                      ? () => _openUniformCampaignSheet(
-                                            context,
-                                            season.id,
-                                          )
-                                      : null,
-                                  icon: const Icon(Icons.add),
-                                  label: Text(
-                                    uniformCampaigns.isEmpty
-                                        ? 'Crear uniforme'
-                                        : 'Nueva campana',
-                                  ),
-                                ),
-                                if (selectedUniformCampaign != null) ...[
-                                  OutlinedButton.icon(
-                                    onPressed: canWritePayments
-                                        ? () => _openUniformCampaignSheet(
-                                              context,
-                                              season.id,
-                                              campaign: selectedUniformCampaign,
-                                            )
-                                        : null,
-                                    icon: const Icon(Icons.edit_outlined),
-                                    label: const Text('Editar'),
-                                  ),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                          ],
-                          TextField(
-                            controller: _searchController,
-                            decoration: const InputDecoration(
-                              labelText:
-                                  'Buscar jugador (apodo, nombre, apellido, #)',
-                              prefixIcon: Icon(Icons.search),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: _mode == _PaymentsBoardMode.training
-                                ? [
-                                    _MetricChip(
-                                      label: 'Activos',
-                                      value: trainingDashboard
-                                          .totalActivePlayers
-                                          .toString(),
-                                    ),
-                                    _MetricChip(
-                                      label: 'Pagados esta semana',
-                                      value: trainingDashboard.paidPlayers
-                                          .toString(),
-                                    ),
-                                    _MetricChip(
-                                      label: 'Pendientes esta semana',
-                                      value: trainingDashboard.pendingPlayers
-                                          .toString(),
-                                    ),
-                                    _MetricChip(
-                                      label: 'Adeudos totales',
-                                      value: trainingDashboard.totalDebts
-                                          .toString(),
-                                    ),
-                                  ]
-                                : [
-                                    _MetricChip(
-                                      label: 'Activos',
-                                      value: players.length.toString(),
-                                    ),
-                                    _MetricChip(
-                                      label: 'Con pago uniforme',
-                                      value: uniformPaidPlayers.toString(),
-                                    ),
-                                    _MetricChip(
-                                      label: 'Pendientes uniforme',
-                                      value: uniformPendingPlayers.toString(),
-                                    ),
-                                    _MetricChip(
-                                      label: 'Total pagado',
-                                      value:
-                                          AppFormatters.money(uniformTotalPaid),
-                                    ),
-                                  ],
-                          ),
-                          const SizedBox(height: 10),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: SegmentedButton<_PaymentsBoardFilter>(
-                              segments: const [
-                                ButtonSegment(
-                                  value: _PaymentsBoardFilter.all,
-                                  label: Text('Todos'),
-                                ),
-                                ButtonSegment(
-                                  value: _PaymentsBoardFilter.pending,
-                                  label: Text('Pendientes'),
-                                ),
-                                ButtonSegment(
-                                  value: _PaymentsBoardFilter.paid,
-                                  label: Text('Pagados'),
-                                ),
-                              ],
-                              selected: {_filter},
-                              onSelectionChanged: (selection) {
-                                setState(() => _filter = selection.first);
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: _mode == _PaymentsBoardMode.training
-                          ? trainingCards.isEmpty
-                              ? const EmptyState(
-                                  title: 'Sin resultados',
-                                  message:
-                                      'No hay jugadores activos para este filtro.',
-                                  icon: Icons.payments_outlined,
-                                )
-                              : ListView.separated(
-                                  padding: EdgeInsets.fromLTRB(
-                                    12,
-                                    0,
-                                    12,
-                                    viewPadding.bottom + 12,
-                                  ),
-                                  itemCount: trainingCards.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(height: 6),
-                                  itemBuilder: (context, index) {
-                                    final item = trainingCards[index];
-                                    final payment =
-                                        item.weekStatus.currentPayment;
-                                    final playerLabel =
-                                        '${item.player.jerseyName?.trim().isNotEmpty == true ? item.player.jerseyName!.trim() : item.player.firstName} #${item.player.jerseyNumber}';
+                                  );
 
-                                    return Dismissible(
-                                      key: ValueKey(
-                                          'training-${item.player.id}-${payment?.id ?? 'none'}'),
-                                      confirmDismiss: (direction) async {
-                                        if (direction ==
-                                            DismissDirection.startToEnd) {
-                                          await _openPaymentSheet(
-                                            context,
-                                            season.id,
-                                            playerId: item.player.id,
-                                            payment: payment,
-                                            isTraining: true,
-                                          );
-                                          return false;
-                                        }
-                                        if (direction ==
-                                            DismissDirection.endToStart) {
-                                          await _deletePaymentForCard(
-                                            context,
-                                            playerLabel,
-                                            payment,
-                                            'la semana ${AppFormatters.date(payment?.weekStart ?? _selectedWeekStart)} - ${AppFormatters.date(payment?.weekEnd ?? _selectedWeekEnd)}',
-                                          );
-                                          return false;
-                                        }
-                                        return false;
-                                      },
-                                      background: _SwipeBackground(
-                                        alignment: Alignment.centerLeft,
-                                        color: Colors.blue.shade600,
-                                        icon: Icons.edit_outlined,
-                                        label: payment == null
-                                            ? 'Registrar'
-                                            : 'Editar',
-                                      ),
-                                      secondaryBackground: _SwipeBackground(
-                                        alignment: Alignment.centerRight,
-                                        color: Colors.red.shade600,
-                                        icon: Icons.delete_outline,
-                                        label: 'Eliminar',
-                                      ),
-                                      child: _TrainingPaymentCard(
-                                        item: item,
-                                        canWritePayments: canWritePayments,
-                                        isLoadingReceipt:
-                                            payment?.receiptUrl != null &&
-                                                _loadingReceiptPaths.contains(
-                                                  payment!.receiptUrl!,
-                                                ),
-                                        onRegisterOrEdit: canWritePayments
-                                            ? () => _openPaymentSheet(
+                                  final actions = Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      OutlinedButton.icon(
+                                        onPressed: canWritePayments
+                                            ? () => _openUniformCampaignSheet(
                                                   context,
                                                   season.id,
-                                                  playerId: item.player.id,
-                                                  payment: payment,
-                                                  isTraining: true,
                                                 )
                                             : null,
-                                        onViewReceipt:
-                                            payment?.receiptUrl == null
-                                                ? null
-                                                : () => _openReceipt(
-                                                      context,
-                                                      payment!.receiptUrl!,
-                                                    ),
+                                        icon: const Icon(Icons.add),
+                                        label: Text(
+                                          uniformCampaigns.isEmpty
+                                              ? 'Crear uniforme'
+                                              : 'Nueva campaña',
+                                        ),
                                       ),
-                                    );
-                                  },
-                                )
-                          : uniformCampaigns.isEmpty
-                              ? Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const EmptyState(
-                                        title: 'Sin campanas de uniforme',
-                                        message:
-                                            'Crea una campana para registrar abonos y pagos de uniforme.',
-                                        icon: Icons.checkroom_outlined,
-                                      ),
-                                      const SizedBox(height: 12),
-                                      if (canWritePayments)
-                                        FilledButton.icon(
-                                          onPressed: () =>
-                                              _openUniformCampaignSheet(
-                                            context,
-                                            season.id,
-                                          ),
-                                          icon: const Icon(Icons.add),
-                                          label: const Text('Crear uniforme'),
+                                      if (selectedUniformCampaign != null)
+                                        OutlinedButton.icon(
+                                          onPressed: canWritePayments
+                                              ? () => _openUniformCampaignSheet(
+                                                    context,
+                                                    season.id,
+                                                    campaign:
+                                                        selectedUniformCampaign,
+                                                  )
+                                              : null,
+                                          icon: const Icon(Icons.edit_outlined),
+                                          label: const Text('Editar'),
                                         ),
                                     ],
-                                  ),
-                                )
-                              : uniformCards.isEmpty
-                                  ? const EmptyState(
-                                      title: 'Sin resultados',
-                                      message:
-                                          'No hay jugadores activos para este filtro.',
-                                      icon: Icons.payments_outlined,
-                                    )
-                                  : ListView.separated(
-                                      padding: EdgeInsets.fromLTRB(
-                                        12,
-                                        0,
-                                        12,
-                                        viewPadding.bottom + 12,
-                                      ),
-                                      itemCount: uniformCards.length,
-                                      separatorBuilder: (_, __) =>
-                                          const SizedBox(height: 6),
-                                      itemBuilder: (context, index) {
-                                        final item = uniformCards[index];
-                                        final payment = item.latestPayment;
-                                        final playerLabel =
-                                            '${item.player.jerseyName?.trim().isNotEmpty == true ? item.player.jerseyName!.trim() : item.player.firstName} #${item.player.jerseyNumber}';
+                                  );
 
-                                        return Dismissible(
-                                          key: ValueKey(
-                                              'uniform-${item.player.id}-${payment?.id ?? 'none'}'),
-                                          confirmDismiss: (direction) async {
-                                            if (direction ==
-                                                DismissDirection.startToEnd) {
-                                              await _openPaymentSheet(
+                                  if (compactHeader) {
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        dropdown,
+                                        const SizedBox(height: 8),
+                                        actions,
+                                      ],
+                                    );
+                                  }
+
+                                  return Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(child: dropdown),
+                                      const SizedBox(width: 12),
+                                      Flexible(
+                                        child: actions,
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 10),
+                            ],
+                            TextField(
+                              controller: _searchController,
+                              decoration: const InputDecoration(
+                                labelText:
+                                    'Buscar jugador (apodo, nombre, apellido, #)',
+                                prefixIcon: Icon(Icons.search),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _mode == _PaymentsBoardMode.training
+                                  ? [
+                                      _MetricChip(
+                                        label: 'Activos',
+                                        value: trainingDashboard
+                                            .totalActivePlayers
+                                            .toString(),
+                                      ),
+                                      _MetricChip(
+                                        label: 'Pagados esta semana',
+                                        value: trainingDashboard.paidPlayers
+                                            .toString(),
+                                      ),
+                                      _MetricChip(
+                                        label: 'Abono',
+                                        value: trainingDashboard.partialPlayers
+                                            .toString(),
+                                      ),
+                                      _MetricChip(
+                                        label: 'Pendientes esta semana',
+                                        value: trainingDashboard.pendingPlayers
+                                            .toString(),
+                                      ),
+                                      _MetricChip(
+                                        label: 'Adeudos totales',
+                                        value: trainingDashboard.totalDebts
+                                            .toString(),
+                                      ),
+                                    ]
+                                  : [
+                                      _MetricChip(
+                                        label: 'Activos',
+                                        value: uniformAllSummaries.length
+                                            .toString(),
+                                      ),
+                                      _MetricChip(
+                                        label: 'Pago completo',
+                                        value: uniformPaidPlayers.toString(),
+                                      ),
+                                      _MetricChip(
+                                        label: 'Abonado',
+                                        value: uniformPartialPlayers.toString(),
+                                      ),
+                                      _MetricChip(
+                                        label: 'Pendientes uniforme',
+                                        value: uniformPendingPlayers.toString(),
+                                      ),
+                                      _MetricChip(
+                                        label: 'Total pagado',
+                                        value: AppFormatters.money(
+                                            uniformTotalPaid),
+                                      ),
+                                    ],
+                            ),
+                            const SizedBox(height: 10),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: SegmentedButton<_PaymentsBoardFilter>(
+                                segments: const [
+                                  ButtonSegment(
+                                    value: _PaymentsBoardFilter.all,
+                                    label: Text('Todos'),
+                                  ),
+                                  ButtonSegment(
+                                    value: _PaymentsBoardFilter.pending,
+                                    label: Text('Pendientes'),
+                                  ),
+                                  ButtonSegment(
+                                    value: _PaymentsBoardFilter.partial,
+                                    label: Text('Abono'),
+                                  ),
+                                  ButtonSegment(
+                                    value: _PaymentsBoardFilter.paid,
+                                    label: Text('Pagados'),
+                                  ),
+                                ],
+                                selected: {_filter},
+                                onSelectionChanged: (selection) {
+                                  setState(() => _filter = selection.first);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_mode == _PaymentsBoardMode.training)
+                      if (trainingCards.isEmpty)
+                        const SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: EmptyState(
+                            title: 'Sin resultados',
+                            message:
+                                'No hay jugadores activos para este filtro.',
+                            icon: Icons.payments_outlined,
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            12,
+                            0,
+                            12,
+                            bottomContentPadding,
+                          ),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final item = trainingCards[index];
+                                final payment = item.weekStatus.currentPayment;
+                                final playerLabel =
+                                    '${item.player.jerseyName?.trim().isNotEmpty == true ? item.player.jerseyName!.trim() : item.player.firstName} #${item.player.jerseyNumber}';
+
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: index == trainingCards.length - 1
+                                        ? 0
+                                        : 6,
+                                  ),
+                                  child: Dismissible(
+                                    key: ValueKey(
+                                        'training-${item.player.id}-${payment?.id ?? 'none'}'),
+                                    confirmDismiss: (direction) async {
+                                      if (direction ==
+                                          DismissDirection.startToEnd) {
+                                        await _openPaymentSheet(
+                                          context,
+                                          season.id,
+                                          playerId: item.player.id,
+                                          payment: payment,
+                                          isTraining: true,
+                                        );
+                                        return false;
+                                      }
+                                      if (direction ==
+                                          DismissDirection.endToStart) {
+                                        await _deletePaymentForCard(
+                                          context,
+                                          playerLabel,
+                                          payment,
+                                          'la semana ${AppFormatters.date(payment?.weekStart ?? _selectedWeekStart)} - ${AppFormatters.date(payment?.weekEnd ?? _selectedWeekEnd)}',
+                                        );
+                                      }
+                                      return false;
+                                    },
+                                    background: _SwipeBackground(
+                                      alignment: Alignment.centerLeft,
+                                      color: Colors.blue.shade600,
+                                      icon: Icons.edit_outlined,
+                                      label: payment == null
+                                          ? 'Registrar'
+                                          : 'Editar',
+                                    ),
+                                    secondaryBackground: _SwipeBackground(
+                                      alignment: Alignment.centerRight,
+                                      color: Colors.red.shade600,
+                                      icon: Icons.delete_outline,
+                                      label: 'Eliminar',
+                                    ),
+                                    child: _TrainingPaymentCard(
+                                      item: item,
+                                      canWritePayments: canWritePayments,
+                                      isLoadingReceipt:
+                                          payment?.receiptUrl != null &&
+                                              _loadingReceiptPaths.contains(
+                                                payment!.receiptUrl!,
+                                              ),
+                                      onRegisterOrEdit: canWritePayments
+                                          ? () => _openPaymentSheet(
                                                 context,
                                                 season.id,
                                                 playerId: item.player.id,
                                                 payment: payment,
-                                                uniformCampaignId:
-                                                    item.campaign.id,
-                                              );
-                                              return false;
-                                            }
-                                            if (direction ==
-                                                DismissDirection.endToStart) {
-                                              await _deletePaymentForCard(
+                                                isTraining: true,
+                                              )
+                                          : null,
+                                      onViewReceipt: payment?.receiptUrl == null
+                                          ? null
+                                          : () => _openReceipt(
                                                 context,
-                                                playerLabel,
-                                                payment,
-                                                'la campana ${item.campaign.name}',
-                                              );
-                                              return false;
-                                            }
-                                            return false;
-                                          },
-                                          background: _SwipeBackground(
-                                            alignment: Alignment.centerLeft,
-                                            color: Colors.blue.shade600,
-                                            icon: Icons.edit_outlined,
-                                            label: payment == null
-                                                ? 'Registrar'
-                                                : 'Editar',
-                                          ),
-                                          secondaryBackground: _SwipeBackground(
-                                            alignment: Alignment.centerRight,
-                                            color: Colors.red.shade600,
-                                            icon: Icons.delete_outline,
-                                            label: 'Eliminar',
-                                          ),
-                                          child: _UniformPaymentCard(
-                                            item: item,
-                                            canWritePayments: canWritePayments,
-                                            isLoadingReceipt:
-                                                payment?.receiptUrl != null &&
-                                                    _loadingReceiptPaths
-                                                        .contains(
-                                                      payment!.receiptUrl!,
-                                                    ),
-                                            onRegisterOrEdit: canWritePayments
-                                                ? () => _openPaymentSheet(
-                                                      context,
-                                                      season.id,
-                                                      playerId: item.player.id,
-                                                      payment: payment,
-                                                      uniformCampaignId:
-                                                          item.campaign.id,
-                                                    )
-                                                : null,
-                                            onViewReceipt:
-                                                payment?.receiptUrl == null
-                                                    ? null
-                                                    : () => _openReceipt(
-                                                          context,
-                                                          payment!.receiptUrl!,
-                                                        ),
-                                          ),
-                                        );
-                                      },
+                                                payment!.receiptUrl!,
+                                              ),
                                     ),
-                    ),
+                                  ),
+                                );
+                              },
+                              childCount: trainingCards.length,
+                            ),
+                          ),
+                        )
+                    else if (uniformCampaigns.isEmpty)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const EmptyState(
+                                title: 'Sin campañas de uniforme',
+                                message:
+                                    'Crea una campaña para registrar abonos y pagos de uniforme.',
+                                icon: Icons.checkroom_outlined,
+                              ),
+                              const SizedBox(height: 12),
+                              if (canWritePayments)
+                                FilledButton.icon(
+                                  onPressed: () => _openUniformCampaignSheet(
+                                    context,
+                                    season.id,
+                                  ),
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Crear uniforme'),
+                                ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else if (uniformCards.isEmpty)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: EmptyState(
+                          title: 'Sin resultados',
+                          message: 'No hay jugadores activos para este filtro.',
+                          icon: Icons.payments_outlined,
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          12,
+                          0,
+                          12,
+                          bottomContentPadding,
+                        ),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final item = uniformCards[index];
+                              final payment = item.latestPayment;
+                              final playerLabel =
+                                  '${item.player.jerseyName?.trim().isNotEmpty == true ? item.player.jerseyName!.trim() : item.player.firstName} #${item.player.jerseyNumber}';
+
+                              return Padding(
+                                padding: EdgeInsets.only(
+                                  bottom:
+                                      index == uniformCards.length - 1 ? 0 : 6,
+                                ),
+                                child: Dismissible(
+                                  key: ValueKey(
+                                      'uniform-${item.player.id}-${payment?.id ?? 'none'}'),
+                                  confirmDismiss: (direction) async {
+                                    if (direction ==
+                                        DismissDirection.startToEnd) {
+                                      await _openPaymentSheet(
+                                        context,
+                                        season.id,
+                                        playerId: item.player.id,
+                                        payment: payment,
+                                        uniformCampaignId: item.campaign.id,
+                                      );
+                                      return false;
+                                    }
+                                    if (direction ==
+                                        DismissDirection.endToStart) {
+                                      await _deletePaymentForCard(
+                                        context,
+                                        playerLabel,
+                                        payment,
+                                        'la campaña ${item.campaign.name}',
+                                      );
+                                    }
+                                    return false;
+                                  },
+                                  background: _SwipeBackground(
+                                    alignment: Alignment.centerLeft,
+                                    color: Colors.blue.shade600,
+                                    icon: Icons.edit_outlined,
+                                    label: payment == null
+                                        ? 'Registrar'
+                                        : 'Editar',
+                                  ),
+                                  secondaryBackground: _SwipeBackground(
+                                    alignment: Alignment.centerRight,
+                                    color: Colors.red.shade600,
+                                    icon: Icons.delete_outline,
+                                    label: 'Eliminar',
+                                  ),
+                                  child: _UniformPaymentCard(
+                                    item: item,
+                                    canWritePayments: canWritePayments,
+                                    isLoadingReceipt:
+                                        payment?.receiptUrl != null &&
+                                            _loadingReceiptPaths.contains(
+                                              payment!.receiptUrl!,
+                                            ),
+                                    onRegisterOrEdit: canWritePayments
+                                        ? () => _openPaymentSheet(
+                                              context,
+                                              season.id,
+                                              playerId: item.player.id,
+                                              payment: payment,
+                                              uniformCampaignId:
+                                                  item.campaign.id,
+                                            )
+                                        : null,
+                                    onViewReceipt: payment?.receiptUrl == null
+                                        ? null
+                                        : () => _openReceipt(
+                                              context,
+                                              payment!.receiptUrl!,
+                                            ),
+                                  ),
+                                ),
+                              );
+                            },
+                            childCount: uniformCards.length,
+                          ),
+                        ),
+                      ),
                   ],
                 );
               },
@@ -1214,7 +1457,7 @@ class _UniformPaymentCard extends StatelessWidget {
           if (item.payments.isEmpty)
             const Align(
               alignment: Alignment.centerLeft,
-              child: Text('Sin historial de pagos en esta campana.'),
+              child: Text('Sin historial de pagos en esta campaña.'),
             )
           else
             ...item.payments.take(3).map(

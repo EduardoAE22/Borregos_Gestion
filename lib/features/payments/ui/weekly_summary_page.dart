@@ -1,7 +1,9 @@
 import 'package:borregos_gestion/core/utils/formatters.dart';
 import 'package:borregos_gestion/features/payments/data/payments_repo.dart';
+import 'package:borregos_gestion/features/payments/domain/uniform_campaign.dart';
 import 'package:borregos_gestion/features/payments/domain/weekly_summary.dart';
 import 'package:borregos_gestion/features/payments/providers/payments_providers.dart';
+import 'package:borregos_gestion/features/payments/providers/uniform_campaigns_providers.dart';
 import 'package:borregos_gestion/features/seasons/providers/seasons_providers.dart';
 import 'package:borregos_gestion/features/settings/data/settings_repo.dart';
 import 'package:borregos_gestion/shared/widgets/empty_state.dart';
@@ -9,13 +11,22 @@ import 'package:borregos_gestion/shared/widgets/loading.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+enum PaymentsSummaryMode {
+  training,
+  uniform,
+}
+
 class WeeklySummaryPage extends ConsumerStatefulWidget {
   const WeeklySummaryPage({
     super.key,
     this.initialWeekStart,
+    this.mode = PaymentsSummaryMode.training,
+    this.initialCampaignId,
   });
 
   final DateTime? initialWeekStart;
+  final PaymentsSummaryMode mode;
+  final String? initialCampaignId;
 
   @override
   ConsumerState<WeeklySummaryPage> createState() => _WeeklySummaryPageState();
@@ -48,7 +59,13 @@ class _WeeklySummaryPageState extends ConsumerState<WeeklySummaryPage> {
     final seasonAsync = ref.watch(activeSeasonProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Resumen semanal')),
+      appBar: AppBar(
+        title: Text(
+          widget.mode == PaymentsSummaryMode.training
+              ? 'Resumen semanal'
+              : 'Resumen uniforme',
+        ),
+      ),
       body: seasonAsync.when(
         data: (season) {
           if (season == null) {
@@ -60,13 +77,132 @@ class _WeeklySummaryPageState extends ConsumerState<WeeklySummaryPage> {
             );
           }
 
+          if (widget.mode == PaymentsSummaryMode.uniform) {
+            final campaignsAsync =
+                ref.watch(uniformCampaignsByActiveSeasonProvider);
+            return campaignsAsync.when(
+              data: (campaigns) {
+                if (campaigns.isEmpty) {
+                  return const EmptyState(
+                    title: 'Sin campanas de uniforme',
+                    message:
+                        'Crea una campana para ver el resumen de uniforme.',
+                    icon: Icons.checkroom_outlined,
+                  );
+                }
+                final selectedCampaign =
+                    campaigns.cast<UniformCampaign?>().firstWhere(
+                          (campaign) =>
+                              campaign?.id == widget.initialCampaignId,
+                          orElse: () => campaigns.first,
+                        )!;
+                final summariesAsync = ref.watch(
+                  uniformCampaignPlayerSummariesProvider(selectedCampaign),
+                );
+                return summariesAsync.when(
+                  data: (rows) {
+                    final complete = rows
+                        .where((row) =>
+                            row.state == UniformCampaignPaymentState.complete)
+                        .length;
+                    final partial = rows
+                        .where((row) =>
+                            row.state == UniformCampaignPaymentState.partial)
+                        .length;
+                    final pending = rows
+                        .where((row) =>
+                            row.state == UniformCampaignPaymentState.unpaid)
+                        .length;
+                    final totalPaid = rows.fold<double>(
+                      0,
+                      (sum, row) => sum + row.totalPaid,
+                    );
+
+                    return ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(selectedCampaign.name),
+                          subtitle: Text('Temporada: ${season.name}'),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _MetricCard(
+                              label: 'Total pagado',
+                              value: AppFormatters.money(totalPaid),
+                            ),
+                            _MetricCard(
+                              label: 'Pago completo',
+                              value: '$complete/${rows.length}',
+                            ),
+                            _MetricCard(
+                              label: 'Abonaron',
+                              value: '$partial',
+                            ),
+                            _MetricCard(
+                              label: 'Pendientes',
+                              value: '$pending',
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          'Jugadores',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        ...rows.map(
+                          (row) {
+                            final displayName = (row.player.jerseyName ?? '')
+                                    .trim()
+                                    .isNotEmpty
+                                ? row.player.jerseyName!.trim()
+                                : '${row.player.firstName} ${row.player.lastName}'
+                                    .trim();
+                            final status = switch (row.state) {
+                              UniformCampaignPaymentState.complete => 'PAGADO',
+                              UniformCampaignPaymentState.partial => 'ABONO',
+                              UniformCampaignPaymentState.unpaid => 'PENDIENTE',
+                            };
+                            return Card(
+                              child: ListTile(
+                                title: Text(
+                                    '#${row.player.jerseyNumber} $displayName'),
+                                subtitle: Text(
+                                  'Pagado: ${AppFormatters.money(row.totalPaid)} · '
+                                  'Falta: ${AppFormatters.money(row.remaining)}',
+                                ),
+                                trailing: Chip(label: Text(status)),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                  loading: () =>
+                      const Loading(message: 'Calculando resumen...'),
+                  error: (error, stack) => Center(child: Text('Error: $error')),
+                );
+              },
+              loading: () => const Loading(message: 'Cargando campanas...'),
+              error: (error, stack) => Center(child: Text('Error: $error')),
+            );
+          }
+
           final summaryAsync = ref.watch(
             weeklySummaryProvider((seasonId: season.id, weekStart: _weekStart)),
           );
 
           return summaryAsync.when(
             data: (summary) {
-              final debtors = summary.byPlayer.where((p) => p.pending).toList();
+              final debtors = summary.byPlayer
+                  .where((p) => p.paymentState == 'pending')
+                  .toList();
 
               return ListView(
                 padding: const EdgeInsets.all(16),
@@ -77,43 +213,42 @@ class _WeeklySummaryPageState extends ConsumerState<WeeklySummaryPage> {
                         Text('Semana desde ${AppFormatters.date(_weekStart)}'),
                     subtitle: Text('Temporada: ${season.name}'),
                     trailing: TextButton(
-                        onPressed: _pickWeek, child: const Text('Cambiar')),
+                      onPressed: _pickWeek,
+                      child: const Text('Cambiar'),
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      Expanded(
-                        child: _MetricCard(
-                          label: 'Total pagado',
-                          value: AppFormatters.money(summary.totalPaid),
-                        ),
+                      _MetricCard(
+                        label: 'Total pagado',
+                        value: AppFormatters.money(summary.totalPaid),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _MetricCard(
-                          label: 'Pagaron',
-                          value:
-                              '${summary.paidPlayers}/${summary.totalPlayers}',
-                        ),
+                      _MetricCard(
+                        label: 'Pagados',
+                        value: '${summary.paidPlayers}/${summary.totalPlayers}',
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _MetricCard(
-                          label: 'Deudores',
-                          value: summary.pendingPlayers.toString(),
-                        ),
+                      _MetricCard(
+                        label: 'Abono',
+                        value: summary.partialPlayers.toString(),
+                      ),
+                      _MetricCard(
+                        label: 'Pendientes',
+                        value: summary.pendingPlayers.toString(),
                       ),
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Text('Deudores',
+                  Text('Pendientes',
                       style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   if (debtors.isEmpty)
                     const Card(
                       child: Padding(
                         padding: EdgeInsets.all(16),
-                        child: Text('No hay deudores para esta semana.'),
+                        child: Text('No hay pendientes para esta semana.'),
                       ),
                     )
                   else
@@ -122,13 +257,10 @@ class _WeeklySummaryPageState extends ConsumerState<WeeklySummaryPage> {
                         child: ListTile(
                           title: Text(d.playerName),
                           subtitle: Text(
-                            d.paidThisWeek
-                                ? 'Pagado: ${AppFormatters.money(d.amountPaidThisWeek)}'
-                                : 'Sin pago de Semana en esta semana',
+                            'Pagado: ${AppFormatters.money(d.amountPaidThisWeek)} · '
+                            'Falta: ${AppFormatters.money((d.requiredAmount - d.amountPaidThisWeek).clamp(0, d.requiredAmount))}',
                           ),
-                          trailing: d.pending
-                              ? const Chip(label: Text('Pendiente'))
-                              : Text(AppFormatters.money(d.amountPaidThisWeek)),
+                          trailing: const Chip(label: Text('Pendiente')),
                         ),
                       ),
                     ),
@@ -140,13 +272,18 @@ class _WeeklySummaryPageState extends ConsumerState<WeeklySummaryPage> {
                       child: ListTile(
                         title: Text(p.playerName),
                         subtitle: Text(
-                          p.paidThisWeek
-                              ? 'Pagado: ${AppFormatters.money(p.amountPaidThisWeek)}'
-                              : 'Sin pago',
+                          'Pagado: ${AppFormatters.money(p.amountPaidThisWeek)} · '
+                          'Falta: ${AppFormatters.money((p.requiredAmount - p.amountPaidThisWeek).clamp(0, p.requiredAmount))}',
                         ),
-                        trailing: p.pending
-                            ? const Chip(label: Text('Pendiente'))
-                            : const Chip(label: Text('Pagado')),
+                        trailing: Chip(
+                          label: Text(
+                            switch (p.paymentState) {
+                              'paid' => 'Pagado',
+                              'partial' => 'Abono',
+                              _ => 'Pendiente',
+                            },
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -187,8 +324,9 @@ class _MetricCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(label, style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 6),
