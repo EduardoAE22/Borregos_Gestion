@@ -3,11 +3,11 @@ const MANIFEST = 'flutter-app-manifest';
 const TEMP = 'flutter-temp-cache';
 const CACHE_NAME = 'flutter-app-cache';
 
-const RESOURCES = {"flutter_bootstrap.js": "6ef05777fec2dfda80d6356fab5825c2",
+const RESOURCES = {"flutter_bootstrap.js": "ee8ef5aa596cf370f91677fff4f3fe8b",
 "version.json": "16905fd85ff78a5afbabfe9a768a445b",
 "index.html": "b133d6aa42c9176784bad2c40284caa0",
 "/": "b133d6aa42c9176784bad2c40284caa0",
-"main.dart.js": "4bbc10852e7e296e951f97d9469e1235",
+"main.dart.js": "ede62fd0ae0114c00344f34fb8f86cc6",
 "flutter.js": "24bc71911b75b5f8135c949e27a2984e",
 "favicon.png": "3264cfdd688c9210b8ce56ae4f4244b8",
 "icons/Icon-192.png": "47a7223aa79907a81a97988340f1a105",
@@ -21,7 +21,7 @@ const RESOURCES = {"flutter_bootstrap.js": "6ef05777fec2dfda80d6356fab5825c2",
 "assets/shaders/ink_sparkle.frag": "ecc85a2e95f5e9f53123dcaf8cb9b6ce",
 "assets/shaders/stretch_effect.frag": "40d68efbbf360632f614c731219e95f0",
 "assets/AssetManifest.bin": "585026cc86c0939d4b5397950ae5aae4",
-"assets/fonts/MaterialIcons-Regular.otf": "868a2b12bd68ec567694821b50153e06",
+"assets/fonts/MaterialIcons-Regular.otf": "f0c9c931b9f9285bd9c6ebd0d0cc0916",
 "assets/assets/branding/borregos_logo.png": "090a21b90cbc5afde0b75c930684ec82",
 "canvaskit/skwasm.js": "8060d46e9a4901ca9991edd3a26be4f0",
 "canvaskit/skwasm_heavy.js": "740d43a6b8240ef9e23eed8c48840da4",
