@@ -14,6 +14,11 @@ final uniformsActivePlayersBySeasonProvider =
   return ref.read(uniformsRepoProvider).listActivePlayersForSeason(seasonId);
 });
 
+final uniformsIncludedPlayersBySeasonProvider =
+    FutureProvider.family<List<Player>, String>((ref, seasonId) async {
+  return ref.read(uniformsRepoProvider).listIncludedPlayersForSeason(seasonId);
+});
+
 final uniformsExtrasBySeasonProvider =
     FutureProvider.family<List<UniformExtra>, String>((ref, seasonId) async {
   return ref.read(uniformsRepoProvider).listExtrasBySeason(seasonId);

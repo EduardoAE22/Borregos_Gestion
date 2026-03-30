@@ -45,6 +45,7 @@ create table if not exists public.players (
   weight_kg numeric,
   notes text,
   is_active boolean not null default true,
+  wants_uniform boolean not null default true,
   created_at timestamptz not null default timezone('utc', now()),
   constraint players_jersey_unique unique (season_id, jersey_number),
   constraint players_age_check check (age is null or (age >= 3 and age <= 80)),

@@ -13,6 +13,9 @@ import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/loading.dart';
 import '../auth/providers/auth_providers.dart';
 import '../players/domain/player.dart';
+import '../players/providers/players_providers.dart';
+import '../payments/domain/payment.dart';
+import '../payments/providers/payments_providers.dart';
 import '../seasons/domain/season.dart';
 import '../seasons/providers/seasons_providers.dart';
 import 'data/uniforms_exporter.dart';
@@ -77,20 +80,26 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
 
             final playersAsync =
                 ref.watch(uniformsActivePlayersBySeasonProvider(seasonId));
+            final includedPlayersAsync =
+                ref.watch(uniformsIncludedPlayersBySeasonProvider(seasonId));
             final extrasAsync =
                 ref.watch(uniformsExtrasBySeasonProvider(seasonId));
 
             return profileAsync.when(
               data: (profile) {
                 final canWrite = profile?.canWriteGeneral ?? false;
-                if (playersAsync.isLoading || extrasAsync.isLoading) {
+                if (playersAsync.isLoading ||
+                    includedPlayersAsync.isLoading ||
+                    extrasAsync.isLoading) {
                   return const Loading(message: 'Cargando módulo Uniformes...');
                 }
 
                 final players = playersAsync.valueOrNull ?? const <Player>[];
+                final includedPlayers =
+                    includedPlayersAsync.valueOrNull ?? const <Player>[];
                 final extras =
                     extrasAsync.valueOrNull ?? const <UniformExtra>[];
-                final lines = _buildOrderLines(players, extras);
+                final lines = _buildOrderLines(includedPlayers, extras);
                 final orderRows = buildUniformOrderRows(lines);
 
                 final totalJerseys = orderRows.length;
@@ -153,6 +162,12 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
                                   spacing: 8,
                                   runSpacing: 8,
                                   children: [
+                                    Chip(
+                                        label: Text(
+                                            'Jugadores activos: ${players.length}')),
+                                    Chip(
+                                        label: Text(
+                                            'Incluidos en pedido: ${includedPlayers.length}')),
                                     Chip(
                                         label: Text(
                                             'Total líneas: ${orderRows.length}')),
@@ -256,7 +271,9 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
                     body: TabBarView(
                       children: [
                         _OrderTab(
+                          players: players,
                           rows: orderRows,
+                          canWrite: canWrite,
                           isWeb: kIsWeb,
                           bottomInset: viewPadding.bottom +
                               kBottomNavigationBarHeight +
@@ -276,6 +293,12 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
                             context: context,
                             season: season,
                             lines: lines,
+                          ),
+                          onToggleIncluded: (player, value) =>
+                              _togglePlayerWantsUniform(
+                            context,
+                            player: player,
+                            value: value,
                           ),
                         ),
                         _ExtrasTab(
@@ -331,6 +354,31 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     return <UniformLine>[...playerLines, ...extraLines];
+  }
+
+  Future<void> _togglePlayerWantsUniform(
+    BuildContext context, {
+    required Player player,
+    required bool value,
+  }) async {
+    if (player.id == null) return;
+
+    try {
+      await ref
+          .read(playersRepoProvider)
+          .setPlayerWantsUniform(player.id!, value);
+      ref.invalidate(uniformsActivePlayersBySeasonProvider(player.seasonId));
+      ref.invalidate(uniformsIncludedPlayersBySeasonProvider(player.seasonId));
+      ref.invalidate(activeSeasonUniformPlayersProvider);
+      ref.invalidate(
+        seasonPlayersForUniformPaymentProvider(player.seasonId),
+      );
+      ref.invalidate(paymentsByCategoryProvider(PaymentCategory.uniform));
+    } on PostgrestException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   Future<void> _exportOrder({
@@ -677,24 +725,30 @@ class _UniformsPageState extends ConsumerState<UniformsPage> {
 
 class _OrderTab extends StatelessWidget {
   const _OrderTab({
+    required this.players,
     required this.rows,
+    required this.canWrite,
     required this.isWeb,
     required this.bottomInset,
     required this.onExport,
     required this.onShare,
     required this.onExportSizes,
+    required this.onToggleIncluded,
   });
 
+  final List<Player> players;
   final List<UniformOrderRow> rows;
+  final bool canWrite;
   final bool isWeb;
   final double bottomInset;
   final VoidCallback onExport;
   final VoidCallback onShare;
   final VoidCallback onExportSizes;
+  final void Function(Player player, bool value) onToggleIncluded;
 
   @override
   Widget build(BuildContext context) {
-    if (rows.isEmpty) {
+    if (players.isEmpty && rows.isEmpty) {
       return const EmptyState(
         title: 'Sin líneas de pedido',
         message: 'No hay jugadores activos ni extras para esta temporada.',
@@ -717,12 +771,12 @@ class _OrderTab extends StatelessWidget {
                   runSpacing: 8,
                   children: [
                     FilledButton.icon(
-                      onPressed: onExport,
+                      onPressed: rows.isEmpty ? null : onExport,
                       icon: const Icon(Icons.download_outlined),
                       label: const Text('Exportar Excel'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: onShare,
+                      onPressed: rows.isEmpty ? null : onShare,
                       icon: const Icon(Icons.share_outlined),
                       label: Text(
                         isWeb
@@ -740,7 +794,7 @@ class _OrderTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 OutlinedButton.icon(
-                  onPressed: onExportSizes,
+                  onPressed: rows.isEmpty ? null : onExportSizes,
                   icon: const Icon(Icons.table_chart_outlined),
                   label: const Text('Exportar tallas'),
                 ),
@@ -753,7 +807,62 @@ class _OrderTab extends StatelessWidget {
             ),
           ),
         ),
-        SingleChildScrollView(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Jugadores activos',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Apaga "Incluir en pedido" para excluir al jugador de pedido, Excel, pagos y calidad de datos de uniforme.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  if (players.isEmpty)
+                    const Text('No hay jugadores activos.')
+                  else
+                    ...players.map(
+                      (player) => SwitchListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        value: player.wantsUniform,
+                        onChanged: canWrite
+                            ? (value) => onToggleIncluded(player, value)
+                            : null,
+                        title: Text(
+                          '#${player.jerseyNumber} ${player.fullName}',
+                        ),
+                        subtitle: Text(
+                          player.wantsUniform
+                              ? 'Incluido en pedido'
+                              : 'Visible, pero excluido de uniforme',
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (rows.isEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: EmptyState(
+              title: 'Sin líneas de pedido',
+              message:
+                  'No hay jugadores marcados para uniforme ni extras en esta temporada.',
+              icon: Icons.list_alt_outlined,
+            ),
+          )
+        else
+          SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: SingleChildScrollView(
             child: DataTable(

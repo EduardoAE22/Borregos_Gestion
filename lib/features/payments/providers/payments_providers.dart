@@ -88,6 +88,12 @@ final seasonPlayersForPaymentProvider =
   return ref.read(paymentsRepoProvider).listSeasonPlayers(seasonId);
 });
 
+final seasonPlayersForUniformPaymentProvider =
+    FutureProvider.family<List<PaymentPlayerOption>, String>(
+        (ref, seasonId) async {
+  return ref.read(paymentsRepoProvider).listSeasonPlayersForUniform(seasonId);
+});
+
 final weeklySummaryProvider = FutureProvider.family<WeeklySummary,
     ({String seasonId, DateTime weekStart})>((ref, args) {
   return ref
@@ -101,6 +107,16 @@ final activeSeasonActivePlayersProvider =
   final activePlayers = players.where((player) => player.isActive).toList()
     ..sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
   return activePlayers;
+});
+
+final activeSeasonUniformPlayersProvider =
+    FutureProvider<List<Player>>((ref) async {
+  final players = await ref.watch(playersByActiveSeasonProvider.future);
+  final uniformPlayers = players
+      .where((player) => player.isActive && player.wantsUniform)
+      .toList()
+    ..sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+  return uniformPlayers;
 });
 
 final weeklyPaymentsBySeasonProvider =
@@ -151,7 +167,7 @@ final uniformPaymentsForCampaignProvider =
     FutureProvider.family<List<PaymentRow>, String>((ref, campaignId) async {
   final season = await ref.watch(activeSeasonProvider.future);
   if (season == null) return const <PaymentRow>[];
-  final players = await ref.watch(activeSeasonActivePlayersProvider.future);
+  final players = await ref.watch(activeSeasonUniformPlayersProvider.future);
   final playerIds =
       players.map((player) => player.id).whereType<String>().toList();
   return ref.read(paymentsRepoProvider).listUniformPaymentsForCampaign(
@@ -164,12 +180,13 @@ final uniformPaymentsForCampaignProvider =
 final uniformCampaignPlayerSummariesProvider =
     FutureProvider.family<List<UniformCampaignPlayerSummary>, UniformCampaign>(
         (ref, campaign) async {
-  final players = await ref.watch(activeSeasonActivePlayersProvider.future);
+  final uniformPlayers =
+      await ref.watch(activeSeasonUniformPlayersProvider.future);
   final payments =
       await ref.watch(uniformPaymentsForCampaignProvider(campaign.id).future);
 
   return buildUniformCampaignPlayerSummaries(
-    players: players,
+    players: uniformPlayers,
     campaign: campaign,
     payments: payments,
   );
@@ -198,9 +215,11 @@ final debtByPlayerByCategoryProvider = FutureProvider.family<
   final season = await ref.watch(activeSeasonProvider.future);
   if (season == null) return const <String, int>{};
   final players = await ref.watch(activeSeasonActivePlayersProvider.future);
+  final uniformPlayers =
+      await ref.watch(activeSeasonUniformPlayersProvider.future);
 
   if (args.category == PaymentCategory.uniform) {
-    return {for (final player in players) player.id!: 0};
+    return {for (final player in uniformPlayers) player.id!: 0};
   }
 
   final normalizedWeekStart = getWeekStartMonday(args.selectedWeekStart);

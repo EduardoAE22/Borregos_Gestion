@@ -83,6 +83,10 @@ class PlayersRepo {
     await _client.from('players').update({'is_active': isActive}).eq('id', id);
   }
 
+  Future<void> setPlayerWantsUniform(String id, bool value) async {
+    await _client.from('players').update({'wants_uniform': value}).eq('id', id);
+  }
+
   Future<void> deletePlayer(String playerId) async {
     await _client.from('players').delete().eq('id', playerId);
   }

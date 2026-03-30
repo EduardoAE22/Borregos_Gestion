@@ -20,6 +20,7 @@ class Player {
     this.weightKg,
     this.notes,
     this.isActive = true,
+    this.wantsUniform = true,
     this.createdAt,
   })  : photoPath = photoPath ?? photoUrl,
         photoThumbPath = photoThumbPath ?? photoThumbUrl;
@@ -42,6 +43,7 @@ class Player {
   final double? weightKg;
   final String? notes;
   final bool isActive;
+  final bool wantsUniform;
   final DateTime? createdAt;
 
   @Deprecated('Usa photoPath')
@@ -79,6 +81,7 @@ class Player {
     double? weightKg,
     String? notes,
     bool? isActive,
+    bool? wantsUniform,
     DateTime? createdAt,
   }) {
     return Player(
@@ -100,6 +103,7 @@ class Player {
       weightKg: weightKg ?? this.weightKg,
       notes: notes ?? this.notes,
       isActive: isActive ?? this.isActive,
+      wantsUniform: wantsUniform ?? this.wantsUniform,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -124,6 +128,7 @@ class Player {
       'weight_kg': weightKg,
       'notes': notes,
       'is_active': isActive,
+      'wants_uniform': wantsUniform,
     };
 
     if (normalizedPhotoPath != null && normalizedPhotoPath.isNotEmpty) {
@@ -165,6 +170,7 @@ class Player {
       weightKg: (map['weight_kg'] as num?)?.toDouble(),
       notes: map['notes'] as String?,
       isActive: (map['is_active'] as bool?) ?? true,
+      wantsUniform: (map['wants_uniform'] as bool?) ?? true,
       createdAt: map['created_at'] != null
           ? DateTime.parse(map['created_at'] as String)
           : null,

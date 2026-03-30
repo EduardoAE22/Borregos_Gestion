@@ -63,7 +63,7 @@ class _UniformDataQualityPageState
           }
 
           final playersAsync =
-              ref.watch(uniformsActivePlayersBySeasonProvider(seasonId));
+              ref.watch(uniformsIncludedPlayersBySeasonProvider(seasonId));
           final extrasAsync =
               ref.watch(uniformsExtrasBySeasonProvider(seasonId));
           if (playersAsync.isLoading || extrasAsync.isLoading) {

@@ -295,6 +295,22 @@ class PaymentsRepo {
         .toList();
   }
 
+  Future<List<PaymentPlayerOption>> listSeasonPlayersForUniform(
+      UUID seasonId) async {
+    final data = await _client
+        .from('players')
+        .select('id, jersey_number, first_name, last_name, jersey_name')
+        .eq('season_id', seasonId)
+        .eq('is_active', true)
+        .eq('wants_uniform', true)
+        .order('jersey_number', ascending: true);
+
+    return (data as List<dynamic>)
+        .cast<Map<String, dynamic>>()
+        .map(PaymentPlayerOption.fromMap)
+        .toList();
+  }
+
   Future<List<PaymentRow>> listPaymentsForWeek({
     required UUID seasonId,
     required DateTime weekStart,

@@ -283,7 +283,9 @@ class _PaymentFormSheetState extends ConsumerState<PaymentFormSheet> {
   @override
   Widget build(BuildContext context) {
     final playersAsync =
-        ref.watch(seasonPlayersForPaymentProvider(widget.seasonId));
+        widget.initialUniformCampaignId != null
+            ? ref.watch(seasonPlayersForUniformPaymentProvider(widget.seasonId))
+            : ref.watch(seasonPlayersForPaymentProvider(widget.seasonId));
     final conceptsAsync = ref.watch(paymentConceptsProvider);
     final weeklyConceptAsync = widget.initialWeekStart != null
         ? ref.watch(weeklyPaymentConceptProvider)
@@ -318,8 +320,9 @@ class _PaymentFormSheetState extends ConsumerState<PaymentFormSheet> {
                 const SizedBox(height: 12),
                 playersAsync.when(
                   data: (players) {
+                    final availablePlayers = _availablePlayers(players);
                     final selectedPlayer =
-                        players.cast<PaymentPlayerOption?>().firstWhere(
+                        availablePlayers.cast<PaymentPlayerOption?>().firstWhere(
                               (p) => p?.id == _playerId,
                               orElse: () => null,
                             );
@@ -333,11 +336,24 @@ class _PaymentFormSheetState extends ConsumerState<PaymentFormSheet> {
                         const SizedBox(height: 6),
                         OutlinedButton.icon(
                           onPressed:
-                              _saving ? null : () => _pickPlayer(players),
+                              _saving
+                                  ? null
+                                  : () => _pickPlayer(availablePlayers),
                           icon: const Icon(Icons.search),
                           label: Text(
                               selectedPlayer?.label ?? 'Seleccionar jugador'),
                         ),
+                        if (widget.initialUniformCampaignId != null &&
+                            widget.initialPayment != null &&
+                            selectedPlayer != null &&
+                            !_playerStillEligible(players))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              'El jugador de este pago histórico ya no está incluido en uniforme, pero se conserva temporalmente para poder editar este registro.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
                         if (_playerId == null)
                           const Padding(
                             padding: EdgeInsets.only(top: 6),
@@ -632,6 +648,38 @@ class _PaymentFormSheetState extends ConsumerState<PaymentFormSheet> {
         ),
       ),
     );
+  }
+
+  List<PaymentPlayerOption> _availablePlayers(List<PaymentPlayerOption> players) {
+    if (widget.initialUniformCampaignId == null ||
+        widget.initialPayment == null ||
+        _playerStillEligible(players)) {
+      return players;
+    }
+
+    final payment = widget.initialPayment!;
+    final fallbackName = (payment.playerJerseyName ?? '').trim();
+    final labelName = fallbackName.isNotEmpty
+        ? fallbackName
+        : (payment.playerName ?? '').replaceFirst(
+            RegExp(r'^#-?\d+\s*'),
+            '',
+          ).trim();
+
+    return [
+      ...players,
+      PaymentPlayerOption(
+        id: payment.playerId,
+        jerseyNumber: payment.playerJerseyNumber ?? 0,
+        firstName: labelName.isEmpty ? 'Jugador' : labelName,
+        lastName: '',
+        jerseyName: labelName.isEmpty ? 'Histórico' : labelName,
+      ),
+    ];
+  }
+
+  bool _playerStillEligible(List<PaymentPlayerOption> players) {
+    return players.any((player) => player.id == _playerId);
   }
 }
 

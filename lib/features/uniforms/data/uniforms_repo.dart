@@ -24,6 +24,21 @@ class UniformsRepo {
         .toList();
   }
 
+  Future<List<Player>> listIncludedPlayersForSeason(String seasonId) async {
+    final data = await _client
+        .from('players')
+        .select()
+        .eq('season_id', seasonId)
+        .eq('is_active', true)
+        .eq('wants_uniform', true)
+        .order('jersey_number', ascending: true);
+
+    return (data as List<dynamic>)
+        .cast<Map<String, dynamic>>()
+        .map(Player.fromMap)
+        .toList();
+  }
+
   Future<List<UniformExtra>> listExtrasBySeason(String seasonId) async {
     final data = await _client
         .from('uniform_order_extras')

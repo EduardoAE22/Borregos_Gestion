@@ -9,11 +9,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/utils/logger.dart';
 import '../../shared/widgets/loading.dart';
 import '../auth/providers/auth_providers.dart';
+import '../payments/domain/payment.dart';
+import '../payments/providers/payments_providers.dart';
 import '../seasons/providers/seasons_providers.dart';
 import 'data/players_repo.dart';
 import 'domain/player.dart';
 import 'providers/player_photo_providers.dart';
 import 'providers/players_providers.dart';
+import '../uniforms/providers/uniforms_providers.dart';
 
 class PlayerFormPage extends ConsumerStatefulWidget {
   const PlayerFormPage({
@@ -68,6 +71,7 @@ class _PlayerFormPageState extends ConsumerState<PlayerFormPage> {
   final _notesController = TextEditingController();
 
   bool _isActive = true;
+  bool _wantsUniform = true;
   bool _saving = false;
   bool _initialized = false;
   String? _selectedJerseySize;
@@ -116,6 +120,7 @@ class _PlayerFormPageState extends ConsumerState<PlayerFormPage> {
     _weightController.text = player.weightKg?.toString() ?? '';
     _notesController.text = player.notes ?? '';
     _isActive = player.isActive;
+    _wantsUniform = player.wantsUniform;
     _photoPath = player.photoPath;
     _photoThumbPath = player.photoThumbPath;
     _initialized = true;
@@ -209,6 +214,7 @@ class _PlayerFormPageState extends ConsumerState<PlayerFormPage> {
             : _notesController.text.trim(),
         photoPath: widget.isEdit ? _photoPath : null,
         isActive: _isActive,
+        wantsUniform: _wantsUniform,
       );
 
       final saved = await repo.upsertPlayer(player);
@@ -236,6 +242,11 @@ class _PlayerFormPageState extends ConsumerState<PlayerFormPage> {
       ref.invalidate(playersByActiveSeasonProvider);
       ref.invalidate(playersBySeasonProvider(seasonId));
       ref.invalidate(playerByIdProvider(saved.id!));
+      ref.invalidate(uniformsActivePlayersBySeasonProvider(seasonId));
+      ref.invalidate(uniformsIncludedPlayersBySeasonProvider(seasonId));
+      ref.invalidate(activeSeasonUniformPlayersProvider);
+      ref.invalidate(seasonPlayersForUniformPaymentProvider(seasonId));
+      ref.invalidate(paymentsByCategoryProvider(PaymentCategory.uniform));
       context.pop();
     } on PostgrestException catch (e) {
       AppLogger.supabaseError(e, scope: 'Players.save');
@@ -511,6 +522,13 @@ class _PlayerFormPageState extends ConsumerState<PlayerFormPage> {
               value: _isActive,
               onChanged: _saving ? null : (v) => setState(() => _isActive = v),
               title: const Text('Jugador activo'),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _wantsUniform,
+              onChanged:
+                  _saving ? null : (v) => setState(() => _wantsUniform = v),
+              title: const Text('Quiere uniforme'),
             ),
             const SizedBox(height: 16),
             SizedBox(
