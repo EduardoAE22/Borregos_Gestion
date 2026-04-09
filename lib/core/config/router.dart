@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/providers/auth_providers.dart';
+import '../../features/attendance/attendance_page.dart';
 import '../../features/auth/ui/login_page.dart';
 import '../../features/awards/player_of_month_page.dart';
 import '../../features/dashboard/dashboard_page.dart';
@@ -146,6 +147,14 @@ final goRouterProvider = Provider<GoRouter>((ref) {
               ? PaymentsSummaryMode.uniform
               : PaymentsSummaryMode.training,
           initialCampaignId: state.uri.queryParameters['campaignId'],
+        ),
+      ),
+      GoRoute(
+        path: '/payments/attendance',
+        builder: (context, state) => AttendancePage(
+          initialDate: DateTime.tryParse(
+            state.uri.queryParameters['date'] ?? '',
+          ),
         ),
       ),
       GoRoute(

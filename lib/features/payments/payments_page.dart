@@ -392,13 +392,13 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
     return switch (_filter) {
       _PaymentsBoardFilter.all => searched,
       _PaymentsBoardFilter.pending => searched
-          .where((card) => card.weekStatus.paymentState == PaymentState.pending)
+          .where((card) => card.weekStatus.state == WeeklyPaymentState.unpaid)
           .toList(),
       _PaymentsBoardFilter.partial => searched
-          .where((card) => card.weekStatus.paymentState == PaymentState.partial)
+          .where((card) => card.weekStatus.state == WeeklyPaymentState.partial)
           .toList(),
       _PaymentsBoardFilter.paid => searched
-          .where((card) => card.weekStatus.paymentState == PaymentState.paid)
+          .where((card) => card.weekStatus.state == WeeklyPaymentState.paid)
           .toList(),
     };
   }
@@ -490,6 +490,7 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                     const WeeklyPaymentsDashboardData(
                       players: <WeeklyPlayerPaymentCardData>[],
                       totalActivePlayers: 0,
+                      noChargePlayers: 0,
                       paidPlayers: 0,
                       partialPlayers: 0,
                       pendingPlayers: 0,
@@ -647,6 +648,19 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                                 onPickDate: _pickWeek,
                               ),
                               const SizedBox(height: 10),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => context
+                                      .push(
+                                        '/payments/attendance?date=${_selectedWeekStart.toIso8601String().split('T').first}',
+                                      )
+                                      .then((_) => _invalidatePayments()),
+                                  icon: const Icon(Icons.fact_check_outlined),
+                                  label: const Text('Capturar asistencia'),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
                             ] else ...[
                               LayoutBuilder(
                                 builder: (context, constraints) {
@@ -773,6 +787,11 @@ class _PaymentsPageState extends ConsumerState<PaymentsPage> {
                                         label: 'Activos',
                                         value: trainingDashboard
                                             .totalActivePlayers
+                                            .toString(),
+                                      ),
+                                      _MetricChip(
+                                        label: 'Sin cobro',
+                                        value: trainingDashboard.noChargePlayers
                                             .toString(),
                                       ),
                                       _MetricChip(
@@ -1269,17 +1288,18 @@ class _TrainingPaymentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final player = item.player;
     final status = item.weekStatus;
-    final displayName = (player.jerseyName ?? '').trim().isNotEmpty
-        ? player.jerseyName!.trim()
-        : player.firstName;
+    final displayName = '${player.firstName} ${player.lastName}'.trim();
+    final nickname = (player.jerseyName ?? '').trim();
     final state = status.state;
     final chip = switch (state) {
-      WeeklyPaymentState.unpaid => ('SIN PAGO', Colors.white70),
-      WeeklyPaymentState.partial => ('PAGO PARCIAL', const Color(0xFFF5D77A)),
-      WeeklyPaymentState.paid => ('YA PAGÓ', const Color(0xFF8FD6A3)),
+      WeeklyPaymentState.noCharge => ('SIN COBRO', Colors.white70),
+      WeeklyPaymentState.unpaid => ('FALTA PAGO', Colors.white70),
+      WeeklyPaymentState.partial => ('ABONO', const Color(0xFFF5D77A)),
+      WeeklyPaymentState.paid => ('PAGADO', const Color(0xFF8FD6A3)),
     };
 
     final summary = switch (state) {
+      WeeklyPaymentState.noCharge => 'Sin cobro',
       WeeklyPaymentState.unpaid => status.amountExpected > 0
           ? '${AppFormatters.money(status.amountPaid)} / ${AppFormatters.money(status.amountExpected)}'
           : 'Sin pago',
@@ -1321,6 +1341,11 @@ class _TrainingPaymentCard extends StatelessWidget {
                 label: chip.$1,
                 textColor: chip.$2,
               ),
+              if (nickname.isNotEmpty)
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text('Apodo: $nickname'),
+                ),
             ],
           ),
         ),
@@ -1328,9 +1353,35 @@ class _TrainingPaymentCard extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
+              'Cobro esperado: ${AppFormatters.money(status.amountExpected)}',
+            ),
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
               status.paidAt != null
                   ? 'Pagado: ${AppFormatters.money(status.amountPaid)} • fecha ${AppFormatters.date(status.paidAt!)}'
                   : 'Pagado: ${AppFormatters.money(status.amountPaid)}',
+            ),
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Pendiente: ${AppFormatters.money(status.pendingAmount)}'),
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Asistencias presentes: ${status.presentAttendances}'),
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              status.attendedDates.isEmpty
+                  ? 'Sin asistencias registradas esta semana'
+                  : 'Días asistidos esta semana: ${status.attendedDates.map(AppFormatters.date).join(', ')}',
             ),
           ),
           const SizedBox(height: 4),

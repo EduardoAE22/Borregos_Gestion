@@ -120,8 +120,8 @@ class PaymentsExporter {
     for (var i = 0; i < rows.length; i++) {
       final row = rows[i];
       final status = row.weekStatus;
-      final name = (row.player.jerseyName ?? '').trim().isNotEmpty
-          ? row.player.jerseyName!.trim()
+      final name = row.player.fullName.trim().isNotEmpty
+          ? row.player.fullName.trim()
           : '${row.player.firstName} ${row.player.lastName}'.trim();
       final lastPaidAt =
           status.paidAt != null ? AppFormatters.date(status.paidAt!) : '';

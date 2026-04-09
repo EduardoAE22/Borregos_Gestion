@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../attendance/providers/attendance_providers.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/logger.dart';
 import '../../auth/providers/auth_providers.dart';
+import '../../attendance/domain/attendance_entry.dart' show AttendanceEntry;
+import '../../players/domain/player.dart';
+import '../../players/providers/players_providers.dart';
 import '../../settings/providers/settings_providers.dart';
 import '../domain/payment.dart';
+import '../domain/weekly_payments_board.dart';
 import '../providers/payments_providers.dart';
 
 class PaymentFormSheet extends ConsumerStatefulWidget {
@@ -296,6 +301,21 @@ class _PaymentFormSheetState extends ConsumerState<PaymentFormSheet> {
     final weeklyFeeAmountAsync = widget.initialWeekStart != null
         ? ref.watch(weeklyFeeAmountProvider)
         : const AsyncData<double>(0);
+    final seasonPlayersAsync = widget.initialWeekStart != null
+        ? ref.watch(playersBySeasonProvider(widget.seasonId))
+        : const AsyncData<List<Player>>(<Player>[]);
+    final trainingAttendanceAsync = widget.initialWeekStart != null &&
+            widget.initialWeekEnd != null
+        ? ref.watch(
+            attendanceForWeekProvider(
+              (
+                seasonId: widget.seasonId,
+                weekStart: widget.initialWeekStart!,
+                weekEnd: widget.initialWeekEnd!,
+              ),
+            ),
+          )
+        : const AsyncData<List<AttendanceEntry>>(<AttendanceEntry>[]);
 
     return SafeArea(
       child: Padding(
@@ -491,6 +511,10 @@ class _PaymentFormSheetState extends ConsumerState<PaymentFormSheet> {
                     final uniformConceptId = uniformConceptAsync.valueOrNull;
                     final weeklyFeeAmount =
                         weeklyFeeAmountAsync.valueOrNull ?? 0;
+                    final seasonPlayers =
+                        seasonPlayersAsync.valueOrNull ?? const <Player>[];
+                    final attendanceEntries = trainingAttendanceAsync.valueOrNull ??
+                        const <AttendanceEntry>[];
                     final selectedConcept =
                         concepts.cast<PaymentConcept?>().firstWhere(
                               (concept) => concept?.id == _conceptId,
@@ -503,8 +527,27 @@ class _PaymentFormSheetState extends ConsumerState<PaymentFormSheet> {
                             _conceptId == uniformConceptId) ||
                         isUniformPaymentConceptName(selectedConcept?.name);
 
-                    final suggestedAmount = selectedConcept?.amount ??
+                    double suggestedAmount = selectedConcept?.amount ??
                         (isWeeklyConcept ? weeklyFeeAmount : 0);
+                    if (isWeeklyConcept &&
+                        widget.initialWeekStart != null &&
+                        _playerId != null) {
+                      final player = seasonPlayers.cast<Player?>().firstWhere(
+                            (player) => player?.id == _playerId,
+                            orElse: () => null,
+                          );
+                      if (player != null) {
+                        final presentCount = attendanceEntries
+                            .where((entry) =>
+                                entry.playerId == _playerId && entry.isPresent)
+                            .length;
+                        suggestedAmount = resolveTrainingExpectedAmount(
+                          paymentMode: player.paymentMode,
+                          presentAttendances: presentCount,
+                          weekStart: widget.initialWeekStart!,
+                        );
+                      }
+                    }
                     if (isWeeklyConcept ||
                         isUniformConcept ||
                         suggestedAmount > 0) {
@@ -558,6 +601,10 @@ class _PaymentFormSheetState extends ConsumerState<PaymentFormSheet> {
                     final uniformConceptId = uniformConceptAsync.valueOrNull;
                     final weeklyFeeAmount =
                         weeklyFeeAmountAsync.valueOrNull ?? 0;
+                    final seasonPlayers =
+                        seasonPlayersAsync.valueOrNull ?? const <Player>[];
+                    final attendanceEntries = trainingAttendanceAsync.valueOrNull ??
+                        const <AttendanceEntry>[];
                     final selectedConcept =
                         concepts.cast<PaymentConcept?>().firstWhere(
                               (concept) => concept?.id == _conceptId,
@@ -571,11 +618,29 @@ class _PaymentFormSheetState extends ConsumerState<PaymentFormSheet> {
                         isUniformPaymentConceptName(selectedConcept?.name);
 
                     if (widget.initialWeekStart != null && isWeeklyConcept) {
-                      final suggestedAmount =
+                      var suggestedAmount =
                           selectedConcept?.amount ?? weeklyFeeAmount;
+                      if (_playerId != null) {
+                        final player = seasonPlayers.cast<Player?>().firstWhere(
+                              (player) => player?.id == _playerId,
+                              orElse: () => null,
+                            );
+                        if (player != null) {
+                          final presentCount = attendanceEntries
+                              .where((entry) =>
+                                  entry.playerId == _playerId &&
+                                  entry.isPresent)
+                              .length;
+                          suggestedAmount = resolveTrainingExpectedAmount(
+                            paymentMode: player.paymentMode,
+                            presentAttendances: presentCount,
+                            weekStart: widget.initialWeekStart!,
+                          );
+                        }
+                      }
                       final text = suggestedAmount > 0
                           ? 'Monto sugerido semanal: ${AppFormatters.money(suggestedAmount)}'
-                          : 'Configura weekly_fee_amount en Ajustes';
+                          : 'Monto sugerido semanal: ${AppFormatters.money(0)}';
                       return Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(

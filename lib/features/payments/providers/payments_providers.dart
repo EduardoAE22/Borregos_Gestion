@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../attendance/providers/attendance_providers.dart';
 import '../../players/domain/player.dart';
 import '../../players/providers/players_providers.dart';
 import '../../seasons/providers/seasons_providers.dart';
@@ -232,12 +233,20 @@ final debtByPlayerByCategoryProvider = FutureProvider.family<
       ),
     ).future,
   );
+  final attendanceEntries = await ref
+      .read(attendanceRepoProvider)
+      .listAttendanceForRange(
+        seasonId: season.id,
+        from: fromWeekStart,
+        to: getWeekEndSunday(normalizedWeekStart),
+      );
 
   return calculatePlayerDebtCounts(
     players: players,
     paymentsInRange: payments
         .where((payment) => payment.paymentCategory == args.category)
         .toList(),
+    attendanceEntriesInRange: attendanceEntries,
     seasonStart: season.startsOn,
     selectedWeekStart: normalizedWeekStart,
   );
@@ -246,7 +255,6 @@ final debtByPlayerByCategoryProvider = FutureProvider.family<
 final weeklyPaymentStatusByPlayerProvider =
     FutureProvider.family<Map<String, WeeklyPaymentStatus>, DateTime>(
         (ref, weekStart) async {
-  final players = await ref.watch(activeSeasonActivePlayersProvider.future);
   final weeklyPayments = await ref.watch(
     weeklyPaymentsByCategoryProvider(
       (
@@ -255,12 +263,24 @@ final weeklyPaymentStatusByPlayerProvider =
       ),
     ).future,
   );
-  final expectedAmount =
-      await ref.watch(trainingExpectedWeeklyAmountProvider.future);
+  final activePlayers = await ref.watch(activeSeasonActivePlayersProvider.future);
+  final players = mergeTrainingBoardPlayers(
+    activePlayers: activePlayers,
+    weeklyPayments: weeklyPayments,
+  );
+  final attendanceEntries = await ref.watch(
+    attendanceForActiveSeasonWeekProvider(
+      (
+        weekStart: getWeekStartMonday(weekStart),
+        weekEnd: getWeekEndSunday(weekStart),
+      ),
+    ).future,
+  );
   return buildTrainingWeeklyStatusMap(
     players: players,
     payments: weeklyPayments,
-    weeklyExpectedAmount: expectedAmount,
+    attendanceEntries: attendanceEntries,
+    weekStart: getWeekStartMonday(weekStart),
   );
 });
 
@@ -279,7 +299,19 @@ final weeklyDebtCountsByPlayerProvider =
 final weeklyPaymentsDashboardProvider =
     FutureProvider.family<WeeklyPaymentsDashboardData, DateTime>(
         (ref, weekStart) async {
-  final players = await ref.watch(activeSeasonActivePlayersProvider.future);
+  final activePlayers = await ref.watch(activeSeasonActivePlayersProvider.future);
+  final weeklyPayments = await ref.watch(
+    weeklyPaymentsByCategoryProvider(
+      (
+        weekStart: weekStart,
+        category: PaymentCategory.training,
+      ),
+    ).future,
+  );
+  final players = mergeTrainingBoardPlayers(
+    activePlayers: activePlayers,
+    weeklyPayments: weeklyPayments,
+  );
   final statusByPlayer =
       await ref.watch(weeklyPaymentStatusByPlayerProvider(weekStart).future);
   final debtCounts =

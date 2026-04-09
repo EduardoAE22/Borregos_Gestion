@@ -1,7 +1,8 @@
 import '../../players/domain/player.dart';
+import '../../attendance/domain/attendance_entry.dart';
 import 'payment.dart';
 
-final trainingFeeStartDate = DateTime(2026, 3, 9);
+final trainingFeeStartDate = DateTime(2026, 3, 30);
 const fallbackWeeklyFeeAmount = 130.0;
 
 enum PaymentState {
@@ -11,6 +12,7 @@ enum PaymentState {
 }
 
 enum WeeklyPaymentState {
+  noCharge,
   unpaid,
   partial,
   paid,
@@ -25,6 +27,8 @@ class WeeklyPaymentStatus {
     this.currentPayment,
     this.paidAt,
     this.receiptUrl,
+    this.presentAttendances = 0,
+    this.attendedDates = const <DateTime>[],
   });
 
   final WeeklyPaymentState state;
@@ -34,6 +38,11 @@ class WeeklyPaymentStatus {
   final PaymentRow? currentPayment;
   final DateTime? paidAt;
   final String? receiptUrl;
+  final int presentAttendances;
+  final List<DateTime> attendedDates;
+
+  double get pendingAmount =>
+      (amountExpected - amountPaid).clamp(0, double.infinity);
 }
 
 class WeeklyPlayerPaymentCardData {
@@ -52,6 +61,7 @@ class WeeklyPaymentsDashboardData {
   const WeeklyPaymentsDashboardData({
     required this.players,
     required this.totalActivePlayers,
+    required this.noChargePlayers,
     required this.paidPlayers,
     required this.partialPlayers,
     required this.pendingPlayers,
@@ -60,6 +70,7 @@ class WeeklyPaymentsDashboardData {
 
   final List<WeeklyPlayerPaymentCardData> players;
   final int totalActivePlayers;
+  final int noChargePlayers;
   final int paidPlayers;
   final int partialPlayers;
   final int pendingPlayers;
@@ -178,7 +189,8 @@ Map<String, WeeklyPaymentStatus> buildWeeklyPaymentStatusMap(
 Map<String, WeeklyPaymentStatus> buildTrainingWeeklyStatusMap({
   required List<Player> players,
   required List<PaymentRow> payments,
-  required double weeklyExpectedAmount,
+  required List<AttendanceEntry> attendanceEntries,
+  required DateTime weekStart,
 }) {
   final grouped = <String, List<PaymentRow>>{};
   for (final payment in payments) {
@@ -191,25 +203,43 @@ Map<String, WeeklyPaymentStatus> buildTrainingWeeklyStatusMap({
     grouped.putIfAbsent(payment.playerId, () => <PaymentRow>[]).add(payment);
   }
 
-  final normalizedExpected =
-      weeklyExpectedAmount > 0 ? weeklyExpectedAmount : fallbackWeeklyFeeAmount;
+  final attendanceByPlayer = <String, List<AttendanceEntry>>{};
+  for (final entry in attendanceEntries) {
+    if (!entry.isPresent) continue;
+    attendanceByPlayer
+        .putIfAbsent(entry.playerId, () => <AttendanceEntry>[])
+        .add(entry);
+  }
+
   final map = <String, WeeklyPaymentStatus>{};
 
   for (final player in players) {
     final playerId = player.id!;
     final rows = [...(grouped[playerId] ?? const <PaymentRow>[])]
       ..sort((a, b) => b.paidAt.compareTo(a.paidAt));
-    final totalPaid = rows.fold<double>(0, (sum, row) => sum + row.paidAmount);
-    final paymentState = resolvePaymentState(
-      amountPaid: totalPaid,
-      amountExpected: normalizedExpected,
+    final attendances = [...(attendanceByPlayer[playerId] ?? const <AttendanceEntry>[])]
+      ..sort((a, b) => a.attendedOn.compareTo(b.attendedOn));
+    final presentCount = attendances.length;
+    final normalizedExpected = resolveTrainingExpectedAmount(
+      paymentMode: player.paymentMode,
+      presentAttendances: presentCount,
+      weekStart: weekStart,
     );
+    final totalPaid = rows.fold<double>(0, (sum, row) => sum + row.paidAmount);
+    final paymentState = normalizedExpected <= 0
+        ? (totalPaid > 0 ? PaymentState.paid : PaymentState.pending)
+        : resolvePaymentState(
+            amountPaid: totalPaid,
+            amountExpected: normalizedExpected,
+          );
     final latest = rows.isEmpty ? null : rows.first;
-    final weeklyState = switch (paymentState) {
-      PaymentState.pending => WeeklyPaymentState.unpaid,
-      PaymentState.partial => WeeklyPaymentState.partial,
-      PaymentState.paid => WeeklyPaymentState.paid,
-    };
+    final weeklyState = normalizedExpected <= 0
+        ? (totalPaid > 0 ? WeeklyPaymentState.paid : WeeklyPaymentState.noCharge)
+        : switch (paymentState) {
+            PaymentState.pending => WeeklyPaymentState.unpaid,
+            PaymentState.partial => WeeklyPaymentState.partial,
+            PaymentState.paid => WeeklyPaymentState.paid,
+          };
 
     map[playerId] = WeeklyPaymentStatus(
       state: weeklyState,
@@ -219,15 +249,74 @@ Map<String, WeeklyPaymentStatus> buildTrainingWeeklyStatusMap({
       currentPayment: latest,
       paidAt: latest?.paidAt,
       receiptUrl: latest?.receiptUrl,
+      presentAttendances: presentCount,
+      attendedDates: attendances.map((entry) => entry.attendedOn).toList(),
     );
   }
 
   return map;
 }
 
+List<Player> mergeTrainingBoardPlayers({
+  required List<Player> activePlayers,
+  required List<PaymentRow> weeklyPayments,
+}) {
+  final playersById = <String, Player>{
+    for (final player in activePlayers)
+      if (player.id != null) player.id!: player,
+  };
+
+  for (final payment in weeklyPayments) {
+    if (payment.paymentCategory != PaymentCategory.training) continue;
+    playersById.putIfAbsent(
+      payment.playerId,
+      () => Player(
+        id: payment.playerId,
+        seasonId: payment.seasonId,
+        jerseyNumber: payment.playerJerseyNumber ?? 0,
+        firstName: (payment.playerJerseyName ?? '').trim().isNotEmpty
+            ? payment.playerJerseyName!.trim()
+            : 'Jugador',
+        lastName: '',
+        jerseyName: payment.playerJerseyName,
+        isActive: false,
+        wantsUniform: false,
+        paymentMode: 'normal',
+      ),
+    );
+  }
+
+  final players = playersById.values.toList()
+    ..sort((a, b) {
+      if (a.isActive != b.isActive) {
+        return a.isActive ? -1 : 1;
+      }
+      final jerseyComparison = a.jerseyNumber.compareTo(b.jerseyNumber);
+      if (jerseyComparison != 0) return jerseyComparison;
+      return a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase());
+    });
+  return players;
+}
+
+double resolveTrainingExpectedAmount({
+  required String paymentMode,
+  required int presentAttendances,
+  required DateTime weekStart,
+}) {
+  if (getWeekStartMonday(weekStart).isBefore(trainingFeeStartDate)) return 0;
+  if (paymentMode.trim().toLowerCase() == 'exempt') return 0;
+  return switch (presentAttendances) {
+    <= 0 => 0,
+    1 => 60,
+    2 => 120,
+    _ => fallbackWeeklyFeeAmount,
+  };
+}
+
 Map<String, int> calculatePlayerDebtCounts({
   required List<Player> players,
   required List<PaymentRow> paymentsInRange,
+  required List<AttendanceEntry> attendanceEntriesInRange,
   required DateTime seasonStart,
   required DateTime selectedWeekStart,
 }) {
@@ -241,7 +330,7 @@ Map<String, int> calculatePlayerDebtCounts({
         : trainingFeeStartDate,
     selectedWeekStart: selectedWeekStart,
   );
-  final paidWeeksByPlayer = <String, Set<String>>{};
+  final paidByPlayerWeek = <String, double>{};
 
   for (final payment in paymentsInRange) {
     final normalizedStatus = payment.status.trim().toLowerCase();
@@ -251,16 +340,36 @@ Map<String, int> calculatePlayerDebtCounts({
         weekStart == null) {
       continue;
     }
-    paidWeeksByPlayer
-        .putIfAbsent(payment.playerId, () => <String>{})
-        .add(getWeekStartMonday(weekStart).toIso8601String());
+    final weekKey =
+        '${payment.playerId}|${getWeekStartMonday(weekStart).toIso8601String()}';
+    paidByPlayerWeek[weekKey] = (paidByPlayerWeek[weekKey] ?? 0) + payment.paidAmount;
+  }
+  final attendanceCountByPlayerWeek = <String, int>{};
+  for (final entry in attendanceEntriesInRange) {
+    if (!entry.isPresent) continue;
+    final weekKey =
+        '${entry.playerId}|${getWeekStartMonday(entry.attendedOn).toIso8601String()}';
+    attendanceCountByPlayerWeek[weekKey] =
+        (attendanceCountByPlayerWeek[weekKey] ?? 0) + 1;
   }
 
-  final totalWeeks = allWeeks.length;
-  return {
-    for (final player in players)
-      player.id!: totalWeeks - (paidWeeksByPlayer[player.id]?.length ?? 0),
-  };
+  final debtCounts = <String, int>{};
+  for (final player in players) {
+    var debtCount = 0;
+    for (final week in allWeeks) {
+      final weekKey = '${player.id}|${week.toIso8601String()}';
+      final expected = resolveTrainingExpectedAmount(
+        paymentMode: player.paymentMode,
+        presentAttendances: attendanceCountByPlayerWeek[weekKey] ?? 0,
+        weekStart: week,
+      );
+      if (expected <= 0) continue;
+      final paid = paidByPlayerWeek[weekKey] ?? 0;
+      if (paid < expected) debtCount += 1;
+    }
+    debtCounts[player.id!] = debtCount;
+  }
+  return debtCounts;
 }
 
 WeeklyPaymentsDashboardData buildWeeklyPaymentsDashboard({
@@ -283,6 +392,9 @@ WeeklyPaymentsDashboardData buildWeeklyPaymentsDashboard({
     );
   }).toList();
 
+  final noChargePlayers = cards
+      .where((card) => card.weekStatus.state == WeeklyPaymentState.noCharge)
+      .length;
   final paidPlayers = cards
       .where((card) => card.weekStatus.state == WeeklyPaymentState.paid)
       .length;
@@ -296,7 +408,8 @@ WeeklyPaymentsDashboardData buildWeeklyPaymentsDashboard({
 
   return WeeklyPaymentsDashboardData(
     players: cards,
-    totalActivePlayers: cards.length,
+    totalActivePlayers: cards.where((card) => card.player.isActive).length,
+    noChargePlayers: noChargePlayers,
     paidPlayers: paidPlayers,
     partialPlayers: partialPlayers,
     pendingPlayers: pendingPlayers,

@@ -46,6 +46,7 @@ create table if not exists public.players (
   notes text,
   is_active boolean not null default true,
   wants_uniform boolean not null default true,
+  payment_mode text not null default 'normal',
   created_at timestamptz not null default timezone('utc', now()),
   constraint players_jersey_unique unique (season_id, jersey_number),
   constraint players_age_check check (age is null or (age >= 3 and age <= 80)),
@@ -55,10 +56,38 @@ create table if not exists public.players (
   constraint players_uniform_gender_check check (
     uniform_gender is null or uniform_gender in ('H','M','Niña','Niño')
   ),
+  constraint players_payment_mode_check check (
+    payment_mode in ('normal', 'exempt')
+  ),
   constraint players_height_check check (height_cm is null or height_cm > 0),
   constraint players_weight_check check (weight_kg is null or weight_kg > 0)
 );
 comment on table public.players is 'Jugadores registrados por temporada, con datos basicos y fisicos.';
+
+create table if not exists public.training_sessions (
+  id uuid primary key default gen_random_uuid(),
+  season_id uuid not null references public.seasons (id) on delete cascade,
+  session_date date not null,
+  notes text,
+  created_at timestamptz not null default timezone('utc', now()),
+  constraint training_sessions_unique unique (season_id, session_date)
+);
+comment on table public.training_sessions is 'Sesiones formales de entrenamiento por temporada y fecha.';
+
+create table if not exists public.player_attendance (
+  id uuid primary key default gen_random_uuid(),
+  season_id uuid not null references public.seasons (id) on delete cascade,
+  player_id uuid not null references public.players (id) on delete cascade,
+  attended_on date not null,
+  status text not null,
+  notes text,
+  created_at timestamptz not null default timezone('utc', now()),
+  constraint player_attendance_player_day_unique unique (player_id, attended_on),
+  constraint player_attendance_status_check check (
+    status in ('present', 'absent')
+  )
+);
+comment on table public.player_attendance is 'Control de asistencia por jugador, temporada y fecha de entrenamiento.';
 
 -- 4) Physical/performance metrics by player and date.
 create table if not exists public.player_metrics (
@@ -287,7 +316,12 @@ comment on table public.awards_player_month is 'Reconocimiento mensual (un jugad
 
 -- Useful indexes (season_id, player_id, game_id and related foreign keys).
 create index if not exists idx_players_season_id on public.players (season_id);
+create index if not exists idx_training_sessions_season_id on public.training_sessions (season_id);
+create index if not exists idx_training_sessions_session_date on public.training_sessions (session_date);
 create index if not exists idx_player_metrics_player_id on public.player_metrics (player_id);
+create index if not exists idx_player_attendance_season_id on public.player_attendance (season_id);
+create index if not exists idx_player_attendance_player_id on public.player_attendance (player_id);
+create index if not exists idx_player_attendance_attended_on on public.player_attendance (attended_on);
 create index if not exists idx_uniform_order_extras_season_id on public.uniform_order_extras (season_id);
 create index if not exists idx_payments_season_id on public.payments (season_id);
 create index if not exists idx_payments_player_id on public.payments (player_id);

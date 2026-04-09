@@ -21,6 +21,7 @@ class Player {
     this.notes,
     this.isActive = true,
     this.wantsUniform = true,
+    this.paymentMode = 'normal',
     this.createdAt,
   })  : photoPath = photoPath ?? photoUrl,
         photoThumbPath = photoThumbPath ?? photoThumbUrl;
@@ -44,6 +45,7 @@ class Player {
   final String? notes;
   final bool isActive;
   final bool wantsUniform;
+  final String paymentMode;
   final DateTime? createdAt;
 
   @Deprecated('Usa photoPath')
@@ -82,6 +84,7 @@ class Player {
     String? notes,
     bool? isActive,
     bool? wantsUniform,
+    String? paymentMode,
     DateTime? createdAt,
   }) {
     return Player(
@@ -104,6 +107,7 @@ class Player {
       notes: notes ?? this.notes,
       isActive: isActive ?? this.isActive,
       wantsUniform: wantsUniform ?? this.wantsUniform,
+      paymentMode: paymentMode ?? this.paymentMode,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -129,6 +133,7 @@ class Player {
       'notes': notes,
       'is_active': isActive,
       'wants_uniform': wantsUniform,
+      'payment_mode': paymentMode,
     };
 
     if (normalizedPhotoPath != null && normalizedPhotoPath.isNotEmpty) {
@@ -171,6 +176,7 @@ class Player {
       notes: map['notes'] as String?,
       isActive: (map['is_active'] as bool?) ?? true,
       wantsUniform: (map['wants_uniform'] as bool?) ?? true,
+      paymentMode: (map['payment_mode'] as String?) ?? 'normal',
       createdAt: map['created_at'] != null
           ? DateTime.parse(map['created_at'] as String)
           : null,

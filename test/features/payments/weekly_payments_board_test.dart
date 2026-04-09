@@ -1,5 +1,6 @@
 import 'package:borregos_gestion/features/payments/domain/payment.dart';
 import 'package:borregos_gestion/features/payments/domain/weekly_payments_board.dart';
+import 'package:borregos_gestion/features/attendance/domain/attendance_entry.dart';
 import 'package:borregos_gestion/features/players/domain/player.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -15,7 +16,7 @@ void main() {
     );
   });
 
-  test('calcula adeudos por jugador usando pagos de rango sin N queries', () {
+  test('calcula adeudos por jugador usando asistencia y pagos agregados', () {
     final players = <Player>[
       const Player(
         id: 'p1',
@@ -39,51 +40,108 @@ void main() {
         seasonId: 'season-1',
         playerId: 'p1',
         conceptId: 'concept-1',
-        amount: 200,
-        paidAmount: 200,
+        amount: 120,
+        paidAmount: 120,
         status: 'paid',
-        paidAt: DateTime(2026, 3, 10),
-        weekStart: DateTime(2026, 3, 9),
-        weekEnd: DateTime(2026, 3, 15),
+        paidAt: DateTime(2026, 3, 31),
+        weekStart: DateTime(2026, 3, 30),
+        weekEnd: DateTime(2026, 4, 5),
       ),
       PaymentRow(
         id: 'pay-2',
         seasonId: 'season-1',
         playerId: 'p1',
         conceptId: 'concept-1',
-        amount: 200,
-        paidAmount: 100,
+        amount: 60,
+        paidAmount: 30,
         status: 'partial',
-        paidAt: DateTime(2026, 3, 17),
-        weekStart: DateTime(2026, 3, 16),
-        weekEnd: DateTime(2026, 3, 22),
+        paidAt: DateTime(2026, 4, 8),
+        weekStart: DateTime(2026, 4, 6),
+        weekEnd: DateTime(2026, 4, 12),
       ),
       PaymentRow(
         id: 'pay-3',
         seasonId: 'season-1',
         playerId: 'p2',
         conceptId: 'concept-1',
-        amount: 200,
-        paidAmount: 200,
+        amount: 130,
+        paidAmount: 130,
         status: 'paid',
-        paidAt: DateTime(2026, 3, 24),
-        weekStart: DateTime(2026, 3, 23),
-        weekEnd: DateTime(2026, 3, 29),
+        paidAt: DateTime(2026, 4, 10),
+        weekStart: DateTime(2026, 4, 6),
+        weekEnd: DateTime(2026, 4, 12),
+      ),
+    ];
+    final attendance = <AttendanceEntry>[
+      AttendanceEntry(
+        seasonId: 'season-1',
+        playerId: 'p1',
+        attendedOn: DateTime(2026, 3, 31),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceEntry(
+        seasonId: 'season-1',
+        playerId: 'p1',
+        attendedOn: DateTime(2026, 4, 2),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceEntry(
+        seasonId: 'season-1',
+        playerId: 'p1',
+        attendedOn: DateTime(2026, 4, 8),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceEntry(
+        seasonId: 'season-1',
+        playerId: 'p2',
+        attendedOn: DateTime(2026, 3, 31),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceEntry(
+        seasonId: 'season-1',
+        playerId: 'p2',
+        attendedOn: DateTime(2026, 4, 7),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceEntry(
+        seasonId: 'season-1',
+        playerId: 'p2',
+        attendedOn: DateTime(2026, 4, 9),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceEntry(
+        seasonId: 'season-1',
+        playerId: 'p2',
+        attendedOn: DateTime(2026, 4, 10),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceEntry(
+        seasonId: 'season-1',
+        playerId: 'p2',
+        attendedOn: DateTime(2026, 4, 14),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceEntry(
+        seasonId: 'season-1',
+        playerId: 'p2',
+        attendedOn: DateTime(2026, 4, 15),
+        status: AttendanceStatus.present,
       ),
     ];
 
     final debts = calculatePlayerDebtCounts(
       players: players,
       paymentsInRange: payments,
+      attendanceEntriesInRange: attendance,
       seasonStart: DateTime(2026, 2, 2),
-      selectedWeekStart: DateTime(2026, 3, 30),
+      selectedWeekStart: DateTime(2026, 4, 13),
     );
 
-    expect(debts['p1'], 2);
-    expect(debts['p2'], 3);
+    expect(debts['p1'], 1);
+    expect(debts['p2'], 2);
   });
 
-  test('adeudos son 0 antes del 09-03-2026 para todos', () {
+  test('adeudos son 0 antes del 30-03-2026 para todos', () {
     final players = <Player>[
       const Player(
         id: 'p1',
@@ -97,8 +155,9 @@ void main() {
     final debts = calculatePlayerDebtCounts(
       players: players,
       paymentsInRange: const <PaymentRow>[],
+      attendanceEntriesInRange: const <AttendanceEntry>[],
       seasonStart: DateTime(2026, 2, 2),
-      selectedWeekStart: DateTime(2026, 3, 2),
+      selectedWeekStart: DateTime(2026, 3, 23),
     );
 
     expect(debts['p1'], 0);

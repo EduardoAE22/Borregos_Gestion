@@ -24,7 +24,9 @@ grant execute on function public.current_role() to authenticated;
 alter table public.profiles enable row level security;
 alter table public.seasons enable row level security;
 alter table public.players enable row level security;
+alter table public.training_sessions enable row level security;
 alter table public.player_metrics enable row level security;
+alter table public.player_attendance enable row level security;
 alter table public.uniform_order_extras enable row level security;
 alter table public.app_settings enable row level security;
 alter table public.payment_concepts enable row level security;
@@ -63,9 +65,23 @@ for select
 to authenticated
 using (auth.uid() is not null);
 
+drop policy if exists training_sessions_select_authenticated on public.training_sessions;
+create policy training_sessions_select_authenticated
+on public.training_sessions
+for select
+to authenticated
+using (auth.uid() is not null);
+
 drop policy if exists player_metrics_select_authenticated on public.player_metrics;
 create policy player_metrics_select_authenticated
 on public.player_metrics
+for select
+to authenticated
+using (auth.uid() is not null);
+
+drop policy if exists player_attendance_select_authenticated on public.player_attendance;
+create policy player_attendance_select_authenticated
+on public.player_attendance
 for select
 to authenticated
 using (auth.uid() is not null);
@@ -176,9 +192,25 @@ to authenticated
 using (auth.uid() is not null and public.current_role() = 'super_admin')
 with check (auth.uid() is not null and public.current_role() = 'super_admin');
 
+drop policy if exists training_sessions_super_admin_all on public.training_sessions;
+create policy training_sessions_super_admin_all
+on public.training_sessions
+for all
+to authenticated
+using (auth.uid() is not null and public.current_role() = 'super_admin')
+with check (auth.uid() is not null and public.current_role() = 'super_admin');
+
 drop policy if exists player_metrics_super_admin_all on public.player_metrics;
 create policy player_metrics_super_admin_all
 on public.player_metrics
+for all
+to authenticated
+using (auth.uid() is not null and public.current_role() = 'super_admin')
+with check (auth.uid() is not null and public.current_role() = 'super_admin');
+
+drop policy if exists player_attendance_super_admin_all on public.player_attendance;
+create policy player_attendance_super_admin_all
+on public.player_attendance
 for all
 to authenticated
 using (auth.uid() is not null and public.current_role() = 'super_admin')
@@ -286,9 +318,25 @@ to authenticated
 using (auth.uid() is not null and public.current_role() = 'coach')
 with check (auth.uid() is not null and public.current_role() = 'coach');
 
+drop policy if exists training_sessions_coach_all on public.training_sessions;
+create policy training_sessions_coach_all
+on public.training_sessions
+for all
+to authenticated
+using (auth.uid() is not null and public.current_role() = 'coach')
+with check (auth.uid() is not null and public.current_role() = 'coach');
+
 drop policy if exists player_metrics_coach_all on public.player_metrics;
 create policy player_metrics_coach_all
 on public.player_metrics
+for all
+to authenticated
+using (auth.uid() is not null and public.current_role() = 'coach')
+with check (auth.uid() is not null and public.current_role() = 'coach');
+
+drop policy if exists player_attendance_coach_all on public.player_attendance;
+create policy player_attendance_coach_all
+on public.player_attendance
 for all
 to authenticated
 using (auth.uid() is not null and public.current_role() = 'coach')
